@@ -1,0 +1,182 @@
+import React, { useEffect, useState } from "react";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { supabaseClients } from "./db";
+import { Loader2 } from "lucide-react";
+
+// Route Page Imports
+import AllCompaniesPage from "@/views/pages/admin/company/company";
+import AllEmployeesPage from "@/views/pages/admin/employees/all-employees";
+import PendingApprovalsPage from "@/views/pages/admin/employees/approvals";
+import LicensesPage from "@/views/pages/admin/employees/licenses";
+import LoginPage from "@/views/pages/auth/login-page";
+import SignupPage from "@/views/pages/auth/signup-page";
+import ReturnsPage from "@/views/pages/inventory/returns-page";
+import StocksOnHandPage from "@/views/pages/inventory/stocks-on-hand-page";
+import SalesInventoryPage from "@/views/pages/sales/inventory-page";
+
+function PendingActivationPage() {
+  return (
+    <div className="flex flex-col items-center justify-center h-screen text-center p-6 bg-background">
+      <h2 className="text-xl font-bold text-amber-600 mb-2">
+        Registration Received Successfully
+      </h2>
+      <p className="text-sm text-muted-foreground max-w-md">
+        Your user instance is registered. An administrator must provision an
+        active license and corporate link before access can be granted.
+      </p>
+    </div>
+  );
+}
+
+interface GuardProps {
+  allowedRoles?: readonly ("admin" | "sales" | "logistic" | "accounting")[];
+  allowPending?: boolean;
+}
+
+export function AuthorizeGuard({
+  allowedRoles,
+  allowPending = false,
+}: GuardProps) {
+  const location = useLocation();
+  const [authState, setAuthState] = useState<{
+    checking: boolean;
+    isAuthenticated: boolean;
+    isPendingApproval: boolean;
+    role: string | null;
+  }>({
+    checking: true,
+    isAuthenticated: false,
+    isPendingApproval: false,
+    role: null,
+  });
+
+  useEffect(() => {
+    async function evaluateSecurityContext() {
+      try {
+        const mainClient = supabaseClients["sales.server.main"];
+        const {
+          data: { session },
+        } = await mainClient.auth.getSession();
+
+        if (!session) {
+          setAuthState({
+            checking: false,
+            isAuthenticated: false,
+            isPendingApproval: false,
+            role: null,
+          });
+          return;
+        }
+
+        // 🟢 FIXED: Read chosen tenant coordinates directly out of local memory cache
+        const cachedCompanyId = localStorage.getItem("active_company_id");
+        const cachedRole = localStorage.getItem("active_role");
+
+        if (!cachedCompanyId || !cachedRole) {
+          // If authenticated but missing selected coordinates, check if database matches ANY row
+          const { data: licenses } = await mainClient
+            .from("tbl_licenses")
+            .select("license_role, company_id")
+            .eq("user_id", session.user.id);
+
+          if (!licenses || licenses.length === 0) {
+            // Truly a pending user instance with no organizational access
+            setAuthState({
+              checking: false,
+              isAuthenticated: true,
+              isPendingApproval: true,
+              role: null,
+            });
+          } else {
+            // User has licenses but cleared cache/cookies; bounce back to signin screen to select tenant context
+            setAuthState({
+              checking: false,
+              isAuthenticated: false,
+              isPendingApproval: false,
+              role: null,
+            });
+          }
+        } else {
+          // Context confirmed valid! Load the selected active workspace scope configurations
+          setAuthState({
+            checking: false,
+            isAuthenticated: true,
+            isPendingApproval: false,
+            role: cachedRole,
+          });
+        }
+      } catch {
+        setAuthState({
+          checking: false,
+          isAuthenticated: false,
+          isPendingApproval: false,
+          role: null,
+        });
+      }
+    }
+    evaluateSecurityContext();
+  }, [location.pathname]);
+
+  if (authState.checking) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
+
+  if (!authState.isAuthenticated) {
+    return <Navigate to="/a/signin" state={{ from: location }} replace />;
+  }
+
+  if (authState.isPendingApproval && !allowPending) {
+    return <Navigate to="/d/pending-activation" replace />;
+  }
+
+  if (
+    allowedRoles &&
+    authState.role &&
+    !allowedRoles.includes(authState.role as any)
+  ) {
+    return <Navigate to="/d/inventory/stocks-on-hand" replace />;
+  }
+
+  return <Outlet />;
+}
+
+// Routes Configurations
+export const publicRoutes = [
+  { path: "/a/signup", element: <SignupPage /> },
+  { path: "/a/signin", element: <LoginPage /> },
+];
+
+export const protectedRoutes = [
+  {
+    path: "/d/pending-activation",
+    element: <PendingActivationPage />,
+    allowPending: true,
+  },
+  {
+    path: "/d/inventory",
+    allowedRoles: ["admin", "sales", "logistic", "accounting"] as const,
+    children: [
+      { path: "stocks-on-hand", element: <StocksOnHandPage /> },
+      { path: "returns", element: <ReturnsPage /> },
+    ],
+  },
+  {
+    path: "/d/admin",
+    allowedRoles: ["admin"] as const,
+    children: [
+      { path: "companies", element: <AllCompaniesPage /> },
+      { path: "approvals", element: <PendingApprovalsPage /> },
+      { path: "licenses", element: <LicensesPage /> },
+      { path: "employees", element: <AllEmployeesPage /> },
+    ],
+  },
+  {
+    path: "/d/sales",
+    allowedRoles: ["sales", "admin"] as const,
+    children: [{ path: "inventory", element: <SalesInventoryPage /> }],
+  },
+];
