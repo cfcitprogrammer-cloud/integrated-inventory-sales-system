@@ -13,6 +13,10 @@ import SignupPage from "@/views/pages/auth/signup-page";
 import ReturnsPage from "@/views/pages/inventory/returns-page";
 import StocksOnHandPage from "@/views/pages/inventory/stocks-on-hand-page";
 import SalesInventoryPage from "@/views/pages/sales/inventory-page";
+import BadOrdersManagement from "@/views/pages/sales/bad-order-request-page";
+import SalesAllInventoryPage from "@/views/pages/sales/all-inventory";
+import SalesAllSTTPage from "@/views/pages/sales/all-stt";
+import SalesSTTPage from "@/views/pages/sales/stt";
 
 function PendingActivationPage() {
   return (
@@ -177,6 +181,12 @@ export const protectedRoutes = [
   {
     path: "/d/sales",
     allowedRoles: ["sales", "admin"] as const,
-    children: [{ path: "inventory", element: <SalesInventoryPage /> }],
+    children: [
+      { path: "add-inventory", element: <SalesInventoryPage /> },
+      { path: "add-stt", element: <SalesSTTPage /> },
+      { path: "my-inventory", element: <SalesAllInventoryPage /> },
+      { path: "my-stt", element: <SalesAllSTTPage /> },
+      { path: "bo", element: <BadOrdersManagement /> },
+    ],
   },
 ];

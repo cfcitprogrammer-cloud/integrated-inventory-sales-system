@@ -81,7 +81,7 @@ interface ProductVariant {
   category: string;
 }
 
-interface InventoryLineItem {
+interface STTLineItem {
   item_code: string;
   item_description: string;
   item_alias: string;
@@ -90,7 +90,7 @@ interface InventoryLineItem {
   reorder_level: number;
 }
 
-export default function SalesInventoryPage() {
+export default function SalesSTTPage() {
   const mainDbClient = supabaseClients["sales.server.main"];
   const extDbClient = supabaseClients["sales.server.extension"];
 
@@ -116,7 +116,7 @@ export default function SalesInventoryPage() {
   // Local Form Input States
   const [qty, setQty] = useState<number>(0);
   const [reorderLevel, setReorderLevel] = useState<number>(0);
-  const [inventoryLines, setInventoryLines] = useState<InventoryLineItem[]>([]);
+  const [STTLines, setSTTLines] = useState<STTLineItem[]>([]);
 
   // UI Visibility States
   const [isOutletComboOpen, setIsOutletComboOpen] = useState(false);
@@ -223,7 +223,7 @@ export default function SalesInventoryPage() {
       return;
     }
 
-    const isDuplicate = inventoryLines.some(
+    const isDuplicate = STTLines.some(
       (line) => line.item_code === selectedVariant.sku,
     );
     if (isDuplicate) {
@@ -231,7 +231,7 @@ export default function SalesInventoryPage() {
       return;
     }
 
-    const newLine: InventoryLineItem = {
+    const newLine: STTLineItem = {
       item_code: selectedVariant.sku,
       item_description: `${selectedVariant.product_name}`,
       item_uom: selectedVariant.uom,
@@ -240,7 +240,7 @@ export default function SalesInventoryPage() {
       reorder_level: reorderLevel,
     };
 
-    setInventoryLines([...inventoryLines, newLine]);
+    setSTTLines([...STTLines, newLine]);
 
     // Clear out intermediate states
     setSelectedVariant(null);
@@ -251,18 +251,18 @@ export default function SalesInventoryPage() {
   };
 
   const handleRemoveLineItem = (sku: string) => {
-    setInventoryLines(inventoryLines.filter((line) => line.item_code !== sku));
+    setSTTLines(STTLines.filter((line) => line.item_code !== sku));
   };
 
   // --- SAVE OPERATION TO THE DATABASE ---
-  const handleSubmitInventory = async () => {
+  const handleSubmitSTT = async () => {
     if (!outletCode || !outletName) {
       toast.error("An explicit destination outlet is required.");
       return;
     }
 
-    if (inventoryLines.length === 0) {
-      toast.error("Cannot commit an empty inventory manifest.");
+    if (STTLines.length === 0) {
+      toast.error("Cannot commit an empty STT manifest.");
       return;
     }
 
@@ -285,9 +285,9 @@ export default function SalesInventoryPage() {
         throw new Error("No authenticated user found.");
       }
 
-      // 1. Insert inventory header
-      const { data: inventoryData, error: inventoryError } = await mainDbClient
-        .from("tbl_inventory")
+      // 1. Insert STT header
+      const { data: STTData, error: STTError } = await mainDbClient
+        .from("tbl_stt")
         .insert({
           bp_code: outletCode,
           outlet_name: outletName,
@@ -297,14 +297,14 @@ export default function SalesInventoryPage() {
         .select()
         .single();
 
-      if (inventoryError) throw inventoryError;
+      if (STTError) throw STTError;
 
-      // Generated inventory ID
-      const inventoryId = inventoryData.id;
+      // Generated STT ID
+      const STTId = STTData.id;
 
-      // 2. Prepare inventory items
-      const itemPayload = inventoryLines.map((line) => ({
-        inventory_id: inventoryId,
+      // 2. Prepare STT items
+      const itemPayload = STTLines.map((line) => ({
+        stt_id: STTId,
 
         item_code: line.item_code,
         item_description: line.item_description,
@@ -315,20 +315,20 @@ export default function SalesInventoryPage() {
 
       // 3. Insert items
       const { error: itemsError } = await mainDbClient
-        .from("tbl_inventory_items")
+        .from("tbl_stt_items")
         .insert(itemPayload);
 
       if (itemsError) throw itemsError;
 
-      toast.success("Inventory successfully saved.");
+      toast.success("STT successfully saved.");
 
       // Reset form
-      setInventoryLines([]);
+      setSTTLines([]);
       setOutletCode("");
       setOutletName("");
       setOutletInput("");
     } catch (err: any) {
-      toast.error(err.message || "Failed to commit inventory data.");
+      toast.error(err.message || "Failed to commit STT data.");
     } finally {
       setIsSubmitting(false);
     }
@@ -337,8 +337,8 @@ export default function SalesInventoryPage() {
     <div className="space-y-6 w-full p-1 max-w-6xl mx-auto">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-          <ClipboardList className="h-6 w-6 text-indigo-600" /> Sales Inventory
-          Entry Console
+          <ClipboardList className="h-6 w-6 text-indigo-600" /> Sales STT Entry
+          Console
         </h1>
         <p className="text-sm text-muted-foreground">
           Perform clean, optimized dynamic lookups on your multi-tenant backend
@@ -502,7 +502,7 @@ export default function SalesInventoryPage() {
                         {isSearchingItems && (
                           <div className="p-4 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
                             <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />{" "}
-                            Scanning inventory nodes...
+                            Scanning STT nodes...
                           </div>
                         )}
                         {itemInput.trim().length < 2 && !isSearchingItems && (
@@ -641,7 +641,7 @@ export default function SalesInventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {inventoryLines.length === 0 ? (
+                  {STTLines.length === 0 ? (
                     <TableRow>
                       <TableCell
                         colSpan={5}
@@ -653,7 +653,7 @@ export default function SalesInventoryPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    inventoryLines.map((line) => (
+                    STTLines.map((line) => (
                       <TableRow
                         key={line.item_code}
                         className="hover:bg-accent/30"
@@ -687,16 +687,16 @@ export default function SalesInventoryPage() {
               <div className="p-4 border-t bg-muted/10 flex items-center justify-end gap-3 mt-auto">
                 <Button
                   variant="outline"
-                  onClick={() => setInventoryLines([])}
-                  disabled={inventoryLines.length === 0 || isSubmitting}
+                  onClick={() => setSTTLines([])}
+                  disabled={STTLines.length === 0 || isSubmitting}
                 >
                   Clear Manifest Grid
                 </Button>
                 <Button
-                  onClick={handleSubmitInventory}
+                  onClick={handleSubmitSTT}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[160px]"
                   disabled={
-                    inventoryLines.length === 0 || isSubmitting || !outletCode
+                    STTLines.length === 0 || isSubmitting || !outletCode
                   }
                 >
                   {isSubmitting ? (

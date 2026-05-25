@@ -25,6 +25,7 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { NavSales } from "./nav-sales";
 
 interface CompanyTeam {
   name: string;
@@ -131,6 +132,33 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     },
   ];
 
+  const salesItems = [
+    {
+      title: "Inventory",
+      url: "#",
+      icon: Frame,
+      items: [
+        { title: "My Inventory", url: "/d/sales/my-inventory" },
+        { title: "Add Inventory", url: "/d/sales/inventory" },
+      ],
+    },
+    {
+      title: "Bad Order",
+      url: "#",
+      icon: PieChart,
+      items: [{ title: "My BO/Returns", url: "/d/admin/" }],
+    },
+    {
+      title: "Sales to Trade",
+      url: "#",
+      icon: PieChart,
+      items: [
+        { title: "My STT", url: "/d/sales/my-stt" },
+        { title: "Add STT", url: "/d/sales/stt" },
+      ],
+    },
+  ];
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -150,6 +178,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
             {/* Admin layout successfully renders using local context state parameters */}
             {userRole === "admin" && <NavAdmin items={adminItems} />}
+
+            {(userRole === "admin" || userRole === "sales") && (
+              <NavSales items={salesItems} />
+            )}
           </>
         )}
       </SidebarContent>
