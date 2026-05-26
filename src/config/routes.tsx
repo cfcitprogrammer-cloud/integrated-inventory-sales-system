@@ -17,6 +17,12 @@ import BadOrdersManagement from "@/views/pages/sales/bad-order-request-page";
 import SalesAllInventoryPage from "@/views/pages/sales/all-inventory";
 import SalesAllSTTPage from "@/views/pages/sales/all-stt";
 import SalesSTTPage from "@/views/pages/sales/stt";
+import CreateBadOrderPage from "@/views/pages/sales/create-bo";
+import BadOrdersListPage from "@/views/pages/sales/bad-order-request-page";
+import ViewBadOrderDetailsPage from "@/views/pages/sales/view-bo";
+import AccountingDirectDisposalPage from "@/views/pages/accounting/direct-disposals";
+import AccountingViewDirectDisposalPage from "@/views/pages/accounting/view-direct-disposal";
+import LogisticsReturnToWHPage from "@/views/pages/logistics/return-to-wh";
 
 function PendingActivationPage() {
   return (
@@ -186,7 +192,33 @@ export const protectedRoutes = [
       { path: "add-stt", element: <SalesSTTPage /> },
       { path: "my-inventory", element: <SalesAllInventoryPage /> },
       { path: "my-stt", element: <SalesAllSTTPage /> },
-      { path: "bo", element: <BadOrdersManagement /> },
+      { path: "bo", element: <BadOrdersListPage /> },
+      { path: "add-bo", element: <CreateBadOrderPage /> },
+      { path: "bo/:id", element: <ViewBadOrderDetailsPage /> },
+    ],
+  },
+  {
+    path: "/d/accounting",
+    allowedRoles: ["accounting", "admin"] as const,
+    children: [
+      {
+        path: "direct-disposals/:id",
+        element: <AccountingDirectDisposalPage />,
+      },
+      {
+        path: "view/direct-disposals/:id",
+        element: <AccountingViewDirectDisposalPage />,
+      },
+    ],
+  },
+  {
+    path: "/d/logistics",
+    allowedRoles: ["logistics", "admin"] as const,
+    children: [
+      {
+        path: "return-wh/:id",
+        element: <LogisticsReturnToWHPage />,
+      },
     ],
   },
 ];

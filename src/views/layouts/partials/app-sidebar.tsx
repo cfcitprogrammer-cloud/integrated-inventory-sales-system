@@ -26,6 +26,8 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { NavSales } from "./nav-sales";
+import { NavLogistics } from "./nav-logistics";
+import { NavAccounting } from "./nav-accounting";
 
 interface CompanyTeam {
   name: string;
@@ -108,6 +110,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       items: [
         { title: "Stocks On-Hand", url: "/d/inventory/stocks-on-hand" },
         { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
+        { title: "Sales To Trade", url: "/d/inventory/returns" },
+      ],
+    },
+    {
+      title: "Reports",
+      url: "/d/inventory/stocks-on-hand",
+      icon: Bot,
+      items: [
+        { title: "Stocks On-Hand", url: "/d/inventory/stocks-on-hand" },
+        { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
       ],
     },
   ];
@@ -146,7 +158,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       title: "Bad Order",
       url: "#",
       icon: PieChart,
-      items: [{ title: "My BO/Returns", url: "/d/admin/" }],
+      items: [{ title: "My BO/Returns", url: "/d/sales/bo" }],
     },
     {
       title: "Sales to Trade",
@@ -156,6 +168,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "My STT", url: "/d/sales/my-stt" },
         { title: "Add STT", url: "/d/sales/stt" },
       ],
+    },
+  ];
+
+  const accountingItems = [
+    {
+      title: "Returning to Warehouse",
+      url: "#",
+      icon: PieChart,
+    },
+    {
+      title: "Direct Disposals",
+      url: "#",
+      icon: PieChart,
+    },
+  ];
+
+  const logisticsItems = [
+    {
+      title: "Returning to Warehouse",
+      url: "#",
+      icon: PieChart,
     },
   ];
 
@@ -181,6 +214,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
             {(userRole === "admin" || userRole === "sales") && (
               <NavSales items={salesItems} />
+            )}
+
+            {(userRole === "admin" || userRole === "accounting") && (
+              <NavAccounting items={accountingItems} />
+            )}
+
+            {(userRole === "admin" || userRole === "logistics") && (
+              <NavLogistics items={logisticsItems} />
             )}
           </>
         )}
