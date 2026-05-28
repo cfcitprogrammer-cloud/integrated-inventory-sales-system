@@ -106,7 +106,8 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
     );
   }
 
-  const isDisposal = data.workflow_type === "direct_disposal";
+  const isDisposal = data.workflow_type === "For Disposal";
+
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return null;
     return new Date(dateString).toLocaleString(undefined, {
@@ -146,7 +147,7 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
       timestamp: formatDate(data.dd_acc_updated_at),
       statusState: accState,
       statusText: data.dd_acc_status || undefined,
-      isEmailAction: accState === "completed",
+      isEmailAction: true,
     });
 
     let agmState: Milestone["statusState"] = "upcoming";
@@ -163,6 +164,7 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
       timestamp: formatDate(data.dd_agm_updated_at),
       statusState: agmState,
       statusText: data.dd_agm_status || undefined,
+      isEmailAction: true,
     });
   } else {
     // ---- RETURN TO WAREHOUSE TRACK ----
@@ -177,6 +179,7 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
           : "Awaiting physical distribution counter inputs at landing loading docks.",
       timestamp: formatDate(data.rwh_logistic_updated_at),
       statusState: logState,
+      isEmailAction: true,
     });
 
     let accState: Milestone["statusState"] = "upcoming";
@@ -192,6 +195,7 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
           : "Calculating cost variances and generating item valuation reports.",
       timestamp: formatDate(data.rwh_acc_updated_at),
       statusState: accState,
+      isEmailAction: true,
     });
 
     let agmState: Milestone["statusState"] = "upcoming";
@@ -208,6 +212,7 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
       timestamp: formatDate(data.rwh_agm_updated_at),
       statusState: agmState,
       statusText: data.rwh_agm_status || undefined,
+      isEmailAction: true,
     });
   }
 

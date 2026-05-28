@@ -1,4 +1,4 @@
-// pages/bad-orders/ViewBadOrderDetailsPage.tsx
+// pages/bad-orders/DirectDisposalApprovalDetailsPage.tsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -7,8 +7,10 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
+  Package,
 } from "lucide-react";
 import { supabase } from "@/config/db";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -17,32 +19,51 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
 import RequestTimeline from "@/components/custom/timeline";
+import { toast } from "sonner";
 
-export default function AccountingViewDirectDisposalPage() {
+export default function AccountingViewDirectDisposalsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [ticket, setTicket] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingApproval, setIsLoadingApproval] = useState(false);
 
-  // Helper to centralize loading fresh data on initial mount & post-mutation
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState<number>(0);
+
+  // Checks if the ticket has reached a final state in its workflow lifecycle
+  const isTerminated =
+    ticket?.status === "Approved" ||
+    ticket?.status === "Rejected" ||
+    ticket?.status === "Closed";
+
+  // Core Direct Disposal Fetch Engine
   async function fetchDetailedData() {
     if (!id) return;
     try {
       const ticketRes = await supabase()
         .from("tbl_bo_input")
-        .select("*")
+        .select(
+          `*, tbl_employees (
+                    first_name,
+                    last_name
+                  )
+            first_name,
+            last_name
+          )`,
+        )
         .eq("id", id)
         .single();
+
+      // 📦 Fetching the SKU list bound to this ticket
       const itemsRes = await supabase()
         .from("tbl_bo_input_items")
         .select("*")
         .eq("bo_input_id", id);
+
       const attachRes = await supabase()
         .from("tbl_bo_attachments")
         .select("*")
@@ -52,7 +73,10 @@ export default function AccountingViewDirectDisposalPage() {
       setItems(itemsRes.data || []);
       setAttachments(attachRes.data || []);
     } catch (err) {
-      console.error("Failed loading manifest values matrix data hooks", err);
+      console.error(
+        "Failed loading direct disposal approval manifest hooks:",
+        err,
+      );
     } finally {
       setIsLoading(false);
     }
@@ -62,11 +86,50 @@ export default function AccountingViewDirectDisposalPage() {
     fetchDetailedData();
   }, [id]);
 
+  // Pure Binary Decision Workflow Processing Engine
+  async function handleWorkflowAction(decision: "Approved" | "Rejected") {
+    try {
+      setIsSubmitting(true);
+      const timestampIso = new Date().toISOString();
+
+      // 2. Sync corresponding updates into the audit timeline/workflow metrics table
+      const workflowPayload = {
+        dd_acc_status: decision.toUpperCase(),
+        dd_acc_updated_at: timestampIso,
+      };
+
+      const { error: workflowError } = await supabase()
+        .from("tbl_bo_workflow")
+        .update(workflowPayload)
+        .eq("bo_input_id", ticket.id);
+
+      if (workflowError) throw workflowError;
+
+      // 3. Hot-reload interface tracking contexts
+      await fetchDetailedData();
+      setRefreshNonce((prev) => prev + 1);
+
+      toast.success(
+        `Direct disposal request successfully marked as ${decision}!`,
+      );
+    } catch (error: any) {
+      console.error(
+        "Critical error mapping disposal validation matrix updates:",
+        error.message,
+      );
+      toast.error(`Workflow Update Fault: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span className="text-xs">Parsing tracking metrics...</span>
+        <span className="text-xs">
+          Parsing disposal authorization parameters...
+        </span>
       </div>
     );
   }
@@ -75,82 +138,18 @@ export default function AccountingViewDirectDisposalPage() {
     return (
       <div className="p-6 text-center space-y-2">
         <p className="text-sm text-muted-foreground">
-          Target document metadata missing or deleted context error.
+          Target direct disposal tracking metadata missing context error.
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate("/bad-orders")}
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Back
+        <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back
         </Button>
       </div>
     );
   }
 
-  // Pure Transactional Execution Engine
-  async function handleWorkflowAction(actionType: "APPROVE" | "REJECTED") {
-    try {
-      setIsLoadingApproval(true);
-      const isDisposal = ticket.workflow_type === "For Disposal";
-      const timestampIso = new Date().toISOString();
-
-      // 1. Prepare dynamic payload injections matching your explicit tracking schema rule sets
-      const workflowPayload = isDisposal
-        ? {
-            dd_acc_status: actionType,
-            dd_acc_updated_at: timestampIso,
-          }
-        : {
-            rwh_acc_updated_at: timestampIso,
-            // If rejected at accounting level on a Return, we can conclude or flag the AGM status
-            ...(actionType === "REJECTED" && {
-              rwh_agm_status: "REJECTED",
-              rwh_agm_updated_at: timestampIso,
-            }),
-          };
-
-      // 2. Perform the update mutation directly on the tracking table matching the current transaction ID
-      const { error: workflowError } = await supabase()
-        .from("tbl_bo_workflow")
-        .update(workflowPayload)
-        .eq("bo_input_id", ticket.id);
-
-      if (workflowError) throw workflowError;
-
-      // 3. Sync state back to core record tracking so master queues stay uniform
-      // If a document gets explicitly rejected here, the entire request lifecycle ends
-      let syncedMasterStatus = ticket.status;
-      if (actionType === "REJECTED") {
-        syncedMasterStatus = "Rejected";
-      } else if (actionType === "APPROVE" && isDisposal) {
-        // Keeps it as Pending because it still needs to travel down the pipeline to the AGM desk
-        syncedMasterStatus = "Pending";
-      }
-
-      const { error: masterTicketError } = await supabase()
-        .from("tbl_bo_input")
-        .update({ status: syncedMasterStatus })
-        .eq("id", ticket.id);
-
-      if (masterTicketError) throw masterTicketError;
-
-      // 4. Hot-reload components gracefully instead of triggering a full window document refresh
-      await fetchDetailedData();
-    } catch (error: any) {
-      console.error(
-        "Critical error processing workflow step optimization rules:",
-        error.message,
-      );
-      alert(`Pipeline Mutation Fault: ${error.message}`);
-    } finally {
-      setIsLoadingApproval(false);
-    }
-  }
-
   return (
     <div className="space-y-6">
+      {/* Header Container displaying active binary controls */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -158,63 +157,53 @@ export default function AccountingViewDirectDisposalPage() {
               variant="ghost"
               size="icon"
               className="h-7 w-7 rounded-full"
-              onClick={() => navigate("/bad-orders")}
+              onClick={() => navigate(-1)}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <h1 className="text-xl font-bold tracking-tight">
-              Return/BO Document Trace: {ticket.bp_code}
+              Direct Disposal Evaluation Node
             </h1>
           </div>
           <p className="text-xs text-muted-foreground pl-9">
-            Filing verification metadata timeline.
+            Review submitted asset documentation records to authorize or reject
+            field disposal directly.
           </p>
         </div>
 
-        {/* Action Button Controls Module */}
+        {/* Binary Action Operations Block */}
         <div className="flex items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
           <Button
-            variant="destructive"
             size="sm"
-            className="flex-1 sm:flex-none text-xs"
-            disabled={
-              isLoadingApproval ||
-              ticket.status === "Rejected" ||
-              ticket.status === "Approved"
-            }
-            onClick={() => handleWorkflowAction("REJECTED")}
+            variant="destructive"
+            className="flex-1 sm:flex-none text-xs font-medium"
+            disabled={isSubmitting || isTerminated}
+            onClick={() => handleWorkflowAction("Rejected")}
           >
-            {isLoadingApproval ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-            ) : (
-              <XCircle className="h-3.5 w-3.5 mr-1" />
-            )}
-            Reject
+            <XCircle className="h-3.5 w-3.5 mr-1" /> Reject Request
           </Button>
+
           <Button
             size="sm"
-            className="flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-            disabled={
-              isLoadingApproval ||
-              ticket.status === "Rejected" ||
-              ticket.status === "Approved"
-            }
-            onClick={() => handleWorkflowAction("APPROVE")}
+            className="flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+            disabled={isSubmitting || isTerminated}
+            onClick={() => handleWorkflowAction("Approved")}
           >
-            {isLoadingApproval ? (
+            {isSubmitting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
             ) : (
               <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
             )}
-            Approve
+            Approve Request
           </Button>
         </div>
       </div>
 
-      {/* Grid panels layout: Splitting transaction metadata from the real-time tracking timeline component */}
+      {/* Structured Content Views */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-3 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
+          {/* Metadata Grid Info Summary */}
+          <div className="grid grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
             <div>
               <span className="text-xs text-muted-foreground block">
                 Customer Outlet Name:
@@ -225,20 +214,20 @@ export default function AccountingViewDirectDisposalPage() {
             </div>
             <div>
               <span className="text-xs text-muted-foreground block">
-                Route Assignment:
+                BP Code:
               </span>
               <span className="font-medium inline-block mt-0.5 px-2 py-0.5 rounded-md text-xs bg-muted border">
-                {ticket.workflow_type}
+                {ticket.bp_code}
               </span>
             </div>
             <div>
               <span className="text-xs text-muted-foreground block">
-                Status:
+                Current Status:
               </span>
               <span
                 className={`text-xs font-bold px-2 py-0.5 rounded inline-block mt-0.5 ${
                   ticket.status === "Approved"
-                    ? "bg-green-50 text-green-700 border border-green-200"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                     : ticket.status === "Rejected"
                       ? "bg-red-50 text-red-700 border border-red-200"
                       : "bg-yellow-50 text-yellow-700 border border-yellow-200"
@@ -247,12 +236,79 @@ export default function AccountingViewDirectDisposalPage() {
                 {ticket.status}
               </span>
             </div>
+            <div>
+              <span className="text-xs text-muted-foreground block">
+                Filer Identity:
+              </span>
+              <span className="font-semibold text-primary">
+                {ticket.tbl_employees?.last_name},{" "}
+                {ticket.tbl_employees?.first_name}
+              </span>
+            </div>
           </div>
 
+          {/* 📦 SKU / Disposal Items Manifest (Clean Read-Only View) */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase flex items-center gap-1">
+              <Package className="h-3.5 w-3.5 text-slate-500" /> Disposal Item
+              Manifest
+            </h3>
+            <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>SKU Item Code</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-center w-[120px]">
+                      Disposal Qty
+                    </TableHead>
+                    <TableHead>Unit Type</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={4}
+                        className="text-center py-6 text-muted-foreground text-xs"
+                      >
+                        No items found listed in this disposal request.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    items.map((item) => (
+                      <TableRow
+                        key={item.id}
+                        className="text-xs hover:bg-slate-50/50 align-middle"
+                      >
+                        <TableCell className="font-mono font-medium">
+                          {item.item_code}
+                        </TableCell>
+                        <TableCell
+                          className="max-w-[240px] truncate"
+                          title={item.item_description}
+                        >
+                          {item.item_description}
+                        </TableCell>
+                        <TableCell className="text-center font-bold text-slate-800">
+                          {item.request_qty}
+                        </TableCell>
+                        <TableCell className="font-medium text-muted-foreground">
+                          {item.uom}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {/* Secure Evidence Attachments Manifest */}
           {attachments.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
-                Verification Attachments ({attachments.length})
+                Field Evidence Attachments ({attachments.length})
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {attachments.map((a) => (
@@ -268,78 +324,34 @@ export default function AccountingViewDirectDisposalPage() {
                     className="flex items-center gap-2 p-2 border rounded hover:bg-slate-50 text-xs truncate text-slate-600 font-mono transition-colors"
                   >
                     <FileText className="h-4 w-4 text-blue-500 shrink-0" />
-                    <span className="truncate">Reference File</span>
+                    <span className="truncate">{a.file_path}</span>
                   </a>
                 ))}
               </div>
             </div>
           )}
 
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
-              Itemized Manifest Table
-            </h3>
-            <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SKU Item Code</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-center">
-                      Requested Volume
-                    </TableHead>
-                    <TableHead className="text-center">
-                      Actual Verified Volume
-                    </TableHead>
-                    <TableHead>Unit Type</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => (
-                    <TableRow
-                      key={item.id}
-                      className="text-xs hover:bg-slate-50/50"
-                    >
-                      <TableCell className="font-mono font-medium">
-                        {item.item_code}
-                      </TableCell>
-                      <TableCell
-                        className="max-w-[240px] truncate"
-                        title={item.item_description}
-                      >
-                        {item.item_description}
-                      </TableCell>
-                      <TableCell className="text-center font-medium text-slate-700">
-                        {item.request_qty}
-                      </TableCell>
-                      <TableCell className="text-center italic text-muted-foreground">
-                        {item.actual_qty ?? "Awaiting Count"}
-                      </TableCell>
-                      <TableCell>{item.uom}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-
+          {/* Remarks Section */}
           {ticket.remarks && (
             <div className="bg-slate-50 p-4 rounded-xl border text-xs">
               <span className="font-semibold text-slate-700 block mb-1">
-                Remarks & Audit Logs:
+                Filer Remarks:
               </span>
               <p className="italic text-slate-600 leading-relaxed">
                 {ticket.remarks}
               </p>
             </div>
           )}
+
+          <p className="text-xs text-muted-foreground">
+            Reference ID: {ticket.id}
+          </p>
         </div>
 
-        {/* Interactive Self-Fetching Workflow Timeline Sidebar Column */}
+        {/* Real-Time Processing Sequence Timeline Sidebar */}
         <div className="w-full">
-          {/* Keying the component directly to an active ticket status string guarantees the internal timeline hooks re-fetch whenever the parent document state gets updated inside PostgreSQL */}
           <RequestTimeline
-            key={`${ticket.id}-${ticket.status}`}
+            key={`direct-disposal-timeline-${ticket.id}-${ticket.status}-${refreshNonce}`}
             badOrderId={ticket.id}
           />
         </div>

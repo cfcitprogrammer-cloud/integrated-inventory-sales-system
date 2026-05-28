@@ -1,4 +1,4 @@
-// pages/bad-orders/AccountingViewWarehouseReturnPage.tsx
+// pages/bad-orders/AccountingReturnWarehouseDetailsPage.tsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -6,7 +6,7 @@ import {
   Loader2,
   FileText,
   CheckCircle2,
-  XCircle,
+  AlertTriangle,
   Banknote,
 } from "lucide-react";
 import { supabase } from "@/config/db";
@@ -21,26 +21,45 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import RequestTimeline from "@/components/custom/timeline";
+import { toast } from "sonner";
 
-export default function AccountingViewWarehouseReturnPage() {
+export default function AccountingViewReturnWarehousePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [ticket, setTicket] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
-  const [totalCost, setTotalCost] = useState<string>("");
+
+  // 💡 Purely tracks the macro-level overall financial valuation
+  const [totalCost, setTotalCost] = useState<number | "">("");
 
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingApproval, setIsLoadingApproval] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
-  // Core Data Fetch Engine
+  // Helper flag to verify if accounting metrics have already been posted
+  const isAlreadyCosted =
+    ticket?.total_cost !== null && ticket?.total_cost !== undefined;
+
+  // Master tracking variable to determine if ticket is out of active lifecycle stages
+  const isTerminated = ticket?.status === "Closed";
+
+  // Core Financial Data Fetch Engine
   async function fetchDetailedData() {
     if (!id) return;
     try {
       const ticketRes = await supabase()
         .from("tbl_bo_input")
-        .select("*")
+        .select(
+          `*, tbl_employees (
+                    first_name,
+                    last_name
+                  )
+            first_name,
+            last_name
+          )`,
+        )
         .eq("id", id)
         .single();
 
@@ -54,17 +73,18 @@ export default function AccountingViewWarehouseReturnPage() {
         .select("*")
         .eq("bo_input_id", id);
 
-      setTicket(ticketRes.data);
+      const currentTicket = ticketRes.data;
+      setTicket(currentTicket);
       setItems(itemsRes.data || []);
       setAttachments(attachRes.data || []);
 
-      // If a total cost was previously saved or cached, populate it
-      if (ticketRes.data?.total_cost !== null) {
-        setTotalCost(ticketRes.data.total_cost.toString());
+      // If cost exists in DB, populate it; otherwise leave empty for entry
+      if (currentTicket && currentTicket.total_cost !== null) {
+        setTotalCost(currentTicket.total_cost);
       }
     } catch (err) {
       console.error(
-        "Failed loading accounting variance evaluation matrices:",
+        "Failed loading accounting valuation manifest matrix hooks:",
         err,
       );
     } finally {
@@ -76,11 +96,77 @@ export default function AccountingViewWarehouseReturnPage() {
     fetchDetailedData();
   }, [id]);
 
+  // Handle financial currency numeric boundaries securely
+  const handleCostChange = (val: string) => {
+    if (val === "") {
+      setTotalCost("");
+      return;
+    }
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed) && parsed >= 0) {
+      setTotalCost(parsed);
+    }
+  };
+
+  // Accounting Transactional Execution Engine
+  async function handleFinancialSubmission() {
+    if (totalCost === "") {
+      toast.error(
+        "Financial tracking error: Please provide a valid Total Document Cost.",
+      );
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const timestampIso = new Date().toISOString();
+
+      // 1. Update the overall total cost directly inside the parent ticket entry
+      const { error: ticketUpdateError } = await supabase()
+        .from("tbl_bo_input")
+        .update({
+          total_cost: totalCost,
+          // Shift status over if required by your pipeline layout logic rules
+        })
+        .eq("id", ticket.id);
+
+      if (ticketUpdateError) throw ticketUpdateError;
+
+      // 2. Append updates to the operational lifecycle workflow table
+      const workflowPayload = {
+        rwh_acc_updated_at: timestampIso,
+        // Optional tracking column hooks:
+        // accounting_status: "COSTED"
+      };
+
+      const { error: workflowError } = await supabase()
+        .from("tbl_bo_workflow")
+        .update(workflowPayload)
+        .eq("bo_input_id", ticket.id);
+
+      if (workflowError) throw workflowError;
+
+      // 3. Hot-reload snapshot states
+      await fetchDetailedData();
+      setRefreshNonce((prev) => prev + 1);
+
+      toast.success("Total return valuation metrics logged successfully!");
+    } catch (error: any) {
+      console.error(
+        "Critical error mapping accounting workflow constraints:",
+        error.message,
+      );
+      toast.error(`Accounting Processing Fault: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span className="text-xs">Balancing credit and audit schemas...</span>
+        <span className="text-xs">Compiling financial ledger matrices...</span>
       </div>
     );
   }
@@ -89,91 +175,18 @@ export default function AccountingViewWarehouseReturnPage() {
     return (
       <div className="p-6 text-center space-y-2">
         <p className="text-sm text-muted-foreground">
-          Target validation matrix missing or dead document pointer context.
+          Target validation document financial schema missing context error.
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate("/bad-orders")}
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Back
+        <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back
         </Button>
       </div>
     );
   }
 
-  // Pure Transactional Accounting Execution Engine
-  async function handleWorkflowAction(actionType: "APPROVE" | "REJECTED") {
-    try {
-      setIsLoadingApproval(true);
-      const timestampIso = new Date().toISOString();
-
-      // 1. Enforce financial bounds validation on validation processing steps
-      if (actionType === "APPROVE") {
-        const parsedCost = parseFloat(totalCost);
-        if (isNaN(parsedCost) || parsedCost < 0) {
-          alert(
-            "Accounting Validation Fault: A clear, non-negative total validation aggregate cost must be assigned prior to credit tracking execution.",
-          );
-          return;
-        }
-      }
-
-      // 2. Prepare dynamic payload injections matching corporate accounting validation tracking schemas
-      const workflowPayload = {
-        rwh_acc_updated_at: timestampIso,
-        // Cascade down rejection tracking trees to automatically clean up subsequent gates
-        ...(actionType === "REJECTED" && {
-          rwh_agm_status: "REJECTED",
-          rwh_agm_updated_at: timestampIso,
-        }),
-      };
-
-      // Mutate historical workflow sequence tracks
-      const { error: workflowError } = await supabase()
-        .from("tbl_bo_workflow")
-        .update(workflowPayload)
-        .eq("bo_input_id", ticket.id);
-
-      if (workflowError) throw workflowError;
-
-      // 3. Inject total aggregate calculation sums back onto core ticket layers alongside lifecycle synchronizations
-      let syncedMasterStatus = ticket.status;
-      if (actionType === "REJECTED") {
-        syncedMasterStatus = "Rejected";
-      } else if (actionType === "APPROVE") {
-        // Keeps state pending as it travels onwards down the line items queue to General Management (AGM)
-        syncedMasterStatus = "Pending";
-      }
-
-      const updatePayload: any = { status: syncedMasterStatus };
-      if (actionType === "APPROVE") {
-        updatePayload.total_cost = parseFloat(totalCost);
-      }
-
-      const { error: masterTicketError } = await supabase()
-        .from("tbl_bo_input")
-        .update(updatePayload)
-        .eq("id", ticket.id);
-
-      if (masterTicketError) throw masterTicketError;
-
-      // Refresh data layers to re-evaluate tracking views smoothly
-      await fetchDetailedData();
-    } catch (error: any) {
-      console.error(
-        "Critical error processing accounting workflow audit mutations:",
-        error.message,
-      );
-      alert(`Pipeline Mutation Fault: ${error.message}`);
-    } finally {
-      setIsLoadingApproval(false);
-    }
-  }
-
   return (
     <div className="space-y-6">
+      {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -181,46 +194,45 @@ export default function AccountingViewWarehouseReturnPage() {
               variant="ghost"
               size="icon"
               className="h-7 w-7 rounded-full"
-              onClick={() => navigate("/bad-orders")}
+              onClick={() => navigate(-1)}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <h1 className="text-xl font-bold tracking-tight">
-              Accounting Valuation Review: {ticket.bp_code}
+            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
+              <Banknote className="h-5 w-5 text-emerald-600" /> Financial Cost
+              Assessment
             </h1>
           </div>
           <p className="text-xs text-muted-foreground pl-9">
-            Financial auditing, total cost allocation execution, and milestone
-            verification timelines.
+            Assign final macro asset losses, evaluate received warehouse
+            metrics, and post valuation summaries.
           </p>
         </div>
 
-        {/* Action Button Controls Module */}
-        <div className="flex items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
           <Button
             size="sm"
-            className="flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-            disabled={
-              isLoadingApproval ||
-              ticket.status === "Rejected" ||
-              ticket.status === "Approved"
-            }
-            onClick={() => handleWorkflowAction("APPROVE")}
+            className="flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+            disabled={isSubmitting || isTerminated || isAlreadyCosted}
+            onClick={handleFinancialSubmission}
           >
-            {isLoadingApproval ? (
+            {isSubmitting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
             ) : (
               <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
             )}
-            Approve & Forward Financials
+            {isAlreadyCosted
+              ? "Financial Cost Posted"
+              : "Verify and Submit Total Valuation"}
           </Button>
         </div>
       </div>
 
-      {/* Main Structuring Layout Grids */}
+      {/* Main Structural Grid Panels */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-3 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
+          {/* Metadata Grid */}
+          <div className="grid grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
             <div>
               <span className="text-xs text-muted-foreground block">
                 Customer Outlet Name:
@@ -231,10 +243,10 @@ export default function AccountingViewWarehouseReturnPage() {
             </div>
             <div>
               <span className="text-xs text-muted-foreground block">
-                Route Assignment:
+                BP Code:
               </span>
               <span className="font-medium inline-block mt-0.5 px-2 py-0.5 rounded-md text-xs bg-muted border">
-                {ticket.workflow_type}
+                {ticket.bp_code}
               </span>
             </div>
             <div>
@@ -243,9 +255,9 @@ export default function AccountingViewWarehouseReturnPage() {
               </span>
               <span
                 className={`text-xs font-bold px-2 py-0.5 rounded inline-block mt-0.5 ${
-                  ticket.status === "Approved"
+                  ticket.status === "Open"
                     ? "bg-green-50 text-green-700 border border-green-200"
-                    : ticket.status === "Rejected"
+                    : ticket.status === "Closed"
                       ? "bg-red-50 text-red-700 border border-red-200"
                       : "bg-yellow-50 text-yellow-700 border border-yellow-200"
                 }`}
@@ -253,8 +265,51 @@ export default function AccountingViewWarehouseReturnPage() {
                 {ticket.status}
               </span>
             </div>
+            <div>
+              <span className="text-xs text-muted-foreground block">
+                Filer Identity:
+              </span>
+              <span className="font-semibold text-primary">
+                {ticket.tbl_employees?.last_name},{" "}
+                {ticket.tbl_employees?.first_name}
+              </span>
+            </div>
           </div>
 
+          {/* Dedicated Accounting Valuation Interface */}
+          <div className="border border-emerald-200 bg-emerald-50/20 p-5 rounded-xl space-y-3 shadow-sm">
+            <div>
+              <h3 className="text-xs font-bold tracking-wide text-emerald-800 uppercase flex items-center gap-1.5">
+                Financial Processing Node
+              </h3>
+              <p className="text-[11px] text-muted-foreground">
+                Enter the absolute total net cost calculated for this return
+                request summary down below.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 max-w-sm">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-2.5 text-sm font-semibold text-slate-400">
+                  ₱
+                </span>
+                <Input
+                  type="number"
+                  placeholder="0.00"
+                  className="pl-7 font-mono font-bold text-sm h-10 bg-white border-emerald-300 focus-visible:ring-emerald-500"
+                  value={totalCost}
+                  disabled={isSubmitting || isTerminated || isAlreadyCosted}
+                  onChange={(e) => handleCostChange(e.target.value)}
+                  min={0}
+                  step="0.01"
+                />
+              </div>
+              <span className="text-xs font-semibold text-slate-500 font-sans">
+                PHP Total Net Cost
+              </span>
+            </div>
+          </div>
+
+          {/* Attachments Panel */}
           {attachments.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
@@ -274,118 +329,104 @@ export default function AccountingViewWarehouseReturnPage() {
                     className="flex items-center gap-2 p-2 border rounded hover:bg-slate-50 text-xs truncate text-slate-600 font-mono transition-colors"
                   >
                     <FileText className="h-4 w-4 text-blue-500 shrink-0" />
-                    <span className="truncate">Reference File</span>
+                    <span className="truncate">{a.file_path}</span>
                   </a>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Locked-Down Logistics Reference Manifest Table */}
-          <div className="space-y-4">
-            <div className="space-y-2">
+          {/* Locked Quantities Reference Matrix View */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
-                Audited Itemized Verification Manifest
+                Physical Manifest Volume Audit (Locked Reference)
               </h3>
-              <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>SKU Item Code</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-center">
-                        Requested Qty
-                      </TableHead>
-                      <TableHead className="text-center bg-emerald-50/30 text-emerald-900 font-semibold">
-                        Logistics Counted Qty
-                      </TableHead>
-                      <TableHead>Unit Type</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((item) => (
+              <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded">
+                Quantities verified by logistics. Read-only view for billing
+                calculations.
+              </span>
+            </div>
+            <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>SKU Item Code</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-center w-[120px]">
+                      Requested Qty
+                    </TableHead>
+                    <TableHead className="text-center w-[120px] bg-slate-50/50">
+                      Returned Qty
+                    </TableHead>
+                    <TableHead>Unit Type</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => {
+                    const hasDiscrepancy =
+                      item.actual_qty !== null &&
+                      item.actual_qty !== item.request_qty;
+
+                    return (
                       <TableRow
                         key={item.id}
-                        className="text-xs hover:bg-slate-50/50"
+                        className="text-xs hover:bg-slate-50/50 align-middle"
                       >
                         <TableCell className="font-mono font-medium">
                           {item.item_code}
                         </TableCell>
                         <TableCell
-                          className="max-w-[240px] truncate"
+                          className="max-w-[200px] truncate"
                           title={item.item_description}
                         >
                           {item.item_description}
                         </TableCell>
-                        <TableCell className="text-center text-muted-foreground font-medium">
+                        <TableCell className="text-center font-medium text-slate-500">
                           {item.request_qty}
                         </TableCell>
-                        <TableCell className="text-center font-bold bg-emerald-50/10 text-emerald-700">
-                          {item.actual_qty ?? (
-                            <span className="text-red-500 font-normal italic text-[11px]">
-                              Skipped Floor Count
-                            </span>
-                          )}
+                        <TableCell className="bg-slate-50/30 text-center font-bold text-slate-800">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span>{item.actual_qty ?? "Unverified"}</span>
+                            {hasDiscrepancy && (
+                              <AlertTriangle
+                                className="h-3.5 w-3.5 text-amber-500 shrink-0"
+                                title="Logistics variant identified"
+                              />
+                            )}
+                          </div>
                         </TableCell>
-                        <TableCell>{item.uom}</TableCell>
+                        <TableCell className="font-medium text-muted-foreground">
+                          {item.uom}
+                        </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            {/* Centralized Aggregated Value Input Section */}
-            <div className="bg-slate-900 text-slate-100 p-5 rounded-xl border border-slate-800 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-emerald-400">
-                  <Banknote className="h-4 w-4" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider">
-                    Total Valuation Cost Matrix
-                  </h4>
-                </div>
-                <p className="text-xs text-slate-400 max-w-md">
-                  Evaluate floor counts above and summarize the bulk adjusted
-                  financial loss valuation below.
-                </p>
-              </div>
-
-              <div className="w-full md:w-auto flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-300">₱</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  className="h-10 text-sm font-mono font-bold bg-slate-950 border-slate-700 text-emerald-400 focus-visible:ring-emerald-500 text-right w-full md:w-[200px]"
-                  placeholder="0.00"
-                  disabled={
-                    isLoadingApproval ||
-                    ticket.status === "Rejected" ||
-                    ticket.status === "Approved"
-                  }
-                  value={totalCost}
-                  onChange={(e) => setTotalCost(e.target.value)}
-                  min={0}
-                />
-              </div>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           </div>
 
           {ticket.remarks && (
             <div className="bg-slate-50 p-4 rounded-xl border text-xs">
               <span className="font-semibold text-slate-700 block mb-1">
-                Remarks & Audit Logs:
+                Filer Remarks:
               </span>
               <p className="italic text-slate-600 leading-relaxed">
                 {ticket.remarks}
               </p>
             </div>
           )}
+
+          <p className="text-xs text-muted-foreground">
+            Reference ID: {ticket.id}
+          </p>
         </div>
 
-        {/* Real-Time Processing Sequence Timeline Sidebar */}
+        {/* Real-Time Timeline Sequence Sidebar */}
         <div className="w-full">
           <RequestTimeline
-            key={`${ticket.id}-${ticket.status}`}
+            key={`accounting-timeline-${ticket.id}-${ticket.status}-${refreshNonce}`}
             badOrderId={ticket.id}
           />
         </div>

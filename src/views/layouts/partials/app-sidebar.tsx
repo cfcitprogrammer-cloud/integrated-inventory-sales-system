@@ -42,7 +42,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [isLoading, setIsLoading] = useState(true);
 
   // Real dynamic workspace array state
-  const [userCompanies, setUserCompanies] = useState<CompanyTeam[]>([]);
+  const [, setUserCompanies] = useState<CompanyTeam[]>([]);
 
   useEffect(() => {
     async function getRuntimeProfile() {
@@ -183,7 +183,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const accountingItems = [
     {
       title: "Returning to Warehouse",
-      url: "#",
+      url: "/d/accounting/return-wh/1",
       icon: PieChart,
     },
     {
@@ -196,7 +196,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const logisticsItems = [
     {
       title: "Returning to Warehouse",
-      url: "#",
+      url: "/d/logistics/return-wh/1",
       icon: PieChart,
     },
   ];

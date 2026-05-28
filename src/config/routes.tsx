@@ -27,6 +27,7 @@ import LogisticsViewReturnWarehousePage from "@/views/pages/logistics/view-retur
 import AccountingViewWarehouseReturnPage from "@/views/pages/accounting/view-wh-returns";
 import SalesToTradeReportPage from "@/views/pages/reports/stt";
 import BadOrderReportPage from "@/views/pages/reports/bo";
+import AccountingReturnToWHPage from "@/views/pages/accounting/wh-returns";
 
 function PendingActivationPage() {
   return (
@@ -214,6 +215,10 @@ export const protectedRoutes = [
         element: <AccountingViewDirectDisposalPage />,
       },
       {
+        path: "return-wh/:page",
+        element: <AccountingReturnToWHPage />,
+      },
+      {
         path: "view/return-wh/:id",
         element: <AccountingViewWarehouseReturnPage />,
       },
@@ -224,7 +229,7 @@ export const protectedRoutes = [
     allowedRoles: ["logistic", "admin"] as const,
     children: [
       {
-        path: "return-wh/:id",
+        path: "return-wh/:page",
         element: <LogisticsReturnToWHPage />,
       },
       {

@@ -6,8 +6,7 @@ import {
   Loader2,
   FileText,
   CheckCircle2,
-  XCircle,
-  Save,
+  AlertTriangle,
 } from "lucide-react";
 import { supabase } from "@/config/db";
 import {
@@ -21,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import RequestTimeline from "@/components/custom/timeline";
+import { toast } from "sonner";
 
 interface QuantityState {
   [itemId: string]: number | "";
@@ -38,13 +38,34 @@ export default function LogisticsViewReturnWarehousePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingApproval, setIsLoadingApproval] = useState(false);
 
+  // 💡 Added a refresh nonce state to force a clean timeline remount cycle
+  const [refreshNonce, setRefreshNonce] = useState<number>(0);
+
+  // Helper flag to check if counts have already been submitted previously
+  const isAlreadySubmitted =
+    items.length > 0 && items.every((item) => item.actual_qty !== null);
+
+  // Master tracking variable to determine if ticket is out of active lifecycle stages
+  const isTerminated =
+    ticket?.status === "Approved" ||
+    ticket?.status === "Rejected" ||
+    ticket?.status === "Closed";
+
   // Core Data Fetch Engine
   async function fetchDetailedData() {
     if (!id) return;
     try {
       const ticketRes = await supabase()
         .from("tbl_bo_input")
-        .select("*")
+        .select(
+          `*, tbl_employees (
+                    first_name,
+                    last_name
+                  )
+            first_name,
+            last_name
+          )`,
+        )
         .eq("id", id)
         .single();
 
@@ -66,7 +87,6 @@ export default function LogisticsViewReturnWarehousePage() {
       // Build initial dynamic quantities layout from current database snapshot
       const initialQuantities: QuantityState = {};
       fetchedItems.forEach((item) => {
-        // Fallback to the requested volume defaults if no count has been recorded yet
         initialQuantities[item.id] =
           item.actual_qty !== null ? item.actual_qty : item.request_qty;
       });
@@ -97,33 +117,6 @@ export default function LogisticsViewReturnWarehousePage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span className="text-xs">Parsing logistics tracking metrics...</span>
-      </div>
-    );
-  }
-
-  if (!ticket) {
-    return (
-      <div className="p-6 text-center space-y-2">
-        <p className="text-sm text-muted-foreground">
-          Target RWH document metadata missing or deleted context error.
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate("/bad-orders")}
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Back
-        </Button>
-      </div>
-    );
-  }
-
   // Pure Transactional Logistics Execution Engine
   async function handleWorkflowAction(actionType: "APPROVE" | "REJECTED") {
     try {
@@ -136,7 +129,7 @@ export default function LogisticsViewReturnWarehousePage() {
           (item) => quantities[item.id] === "",
         );
         if (hasMissingFields) {
-          alert(
+          toast.error(
             "Logistics processing fault: Please ensure all verified volume inputs are valid integers before submission.",
           );
           return;
@@ -146,7 +139,6 @@ export default function LogisticsViewReturnWarehousePage() {
       // 2. Prepare dynamic payload tracking injections matching Logistics metrics schema rule sets
       const workflowPayload = {
         rwh_logistic_updated_at: timestampIso,
-        // Concurrently handle cascades down to subsequent routing desks if explicitly rejected
         ...(actionType === "REJECTED" && {
           rwh_agm_status: "REJECTED",
           rwh_agm_updated_at: timestampIso,
@@ -175,33 +167,45 @@ export default function LogisticsViewReturnWarehousePage() {
         if (processingError) throw processingError.error;
       }
 
-      // 4. Sync master statuses to cleanly close or route life cycles forward
-      let syncedMasterStatus = ticket.status;
-      if (actionType === "REJECTED") {
-        syncedMasterStatus = "Rejected";
-      } else if (actionType === "APPROVE") {
-        // Retain pending status since it must advance downstream to the next step (e.g. AGM desk)
-        syncedMasterStatus = "Pending";
-      }
-
-      const { error: masterTicketError } = await supabase()
-        .from("tbl_bo_input")
-        .update({ status: syncedMasterStatus })
-        .eq("id", ticket.id);
-
-      if (masterTicketError) throw masterTicketError;
-
-      // Hot-reload view component data mapping state arrays gracefully
+      // 5. Hot-reload data changes and bump layout key signature flags
       await fetchDetailedData();
+
+      // 💡 Bumping this counter guarantees that the React element tree flashes its key and forces a re-fetch
+      setRefreshNonce((prev) => prev + 1);
+
+      toast.success("Logistics counts verified and submitted successfully!");
     } catch (error: any) {
       console.error(
         "Critical error processing logistics workflow optimization rules:",
         error.message,
       );
-      alert(`Pipeline Mutation Fault: ${error.message}`);
+      toast.error(`Pipeline Mutation Fault: ${error.message}`);
     } finally {
       setIsLoadingApproval(false);
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <span className="text-xs">Parsing logistics tracking metrics...</span>
+      </div>
+    );
+  }
+
+  if (!ticket) {
+    return (
+      <div className="p-6 text-center space-y-2">
+        <p className="text-sm text-muted-foreground">
+          Target RWH document metadata missing or deleted context error.
+        </p>
+        <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Back
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -213,12 +217,12 @@ export default function LogisticsViewReturnWarehousePage() {
               variant="ghost"
               size="icon"
               className="h-7 w-7 rounded-full"
-              onClick={() => navigate("/bad-orders")}
+              onClick={() => navigate(-1)}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <h1 className="text-xl font-bold tracking-tight">
-              Return to Warehouse Audit Trace: {ticket.bp_code}
+              Return to Warehouse Audit Trace
             </h1>
           </div>
           <p className="text-xs text-muted-foreground pl-9">
@@ -228,15 +232,11 @@ export default function LogisticsViewReturnWarehousePage() {
         </div>
 
         {/* Action Button Controls Module */}
-        <div className="flex items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
           <Button
             size="sm"
             className="flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-            disabled={
-              isLoadingApproval ||
-              ticket.status === "Rejected" ||
-              ticket.status === "Approved"
-            }
+            disabled={isLoadingApproval || isTerminated || isAlreadySubmitted}
             onClick={() => handleWorkflowAction("APPROVE")}
           >
             {isLoadingApproval ? (
@@ -244,7 +244,9 @@ export default function LogisticsViewReturnWarehousePage() {
             ) : (
               <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
             )}
-            Submit and Verify Counts
+            {isAlreadySubmitted
+              ? "Counts Verified"
+              : "Submit and Verify Counts"}
           </Button>
         </div>
       </div>
@@ -252,7 +254,7 @@ export default function LogisticsViewReturnWarehousePage() {
       {/* Main Structural Panels Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-3 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
+          <div className="grid grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
             <div>
               <span className="text-xs text-muted-foreground block">
                 Customer Outlet Name:
@@ -263,10 +265,10 @@ export default function LogisticsViewReturnWarehousePage() {
             </div>
             <div>
               <span className="text-xs text-muted-foreground block">
-                Route Assignment:
+                BP Code:
               </span>
               <span className="font-medium inline-block mt-0.5 px-2 py-0.5 rounded-md text-xs bg-muted border">
-                {ticket.workflow_type}
+                {ticket.bp_code}
               </span>
             </div>
             <div>
@@ -275,14 +277,23 @@ export default function LogisticsViewReturnWarehousePage() {
               </span>
               <span
                 className={`text-xs font-bold px-2 py-0.5 rounded inline-block mt-0.5 ${
-                  ticket.status === "Approved"
+                  ticket.status === "Open"
                     ? "bg-green-50 text-green-700 border border-green-200"
-                    : ticket.status === "Rejected"
+                    : ticket.status === "Closed"
                       ? "bg-red-50 text-red-700 border border-red-200"
                       : "bg-yellow-50 text-yellow-700 border border-yellow-200"
                 }`}
               >
                 {ticket.status}
+              </span>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground block">
+                Requested By:
+              </span>
+              <span className="font-semibold text-primary">
+                {ticket.tbl_employees.last_name},{" "}
+                {ticket.tbl_employees.first_name}
               </span>
             </div>
           </div>
@@ -306,7 +317,7 @@ export default function LogisticsViewReturnWarehousePage() {
                     className="flex items-center gap-2 p-2 border rounded hover:bg-slate-50 text-xs truncate text-slate-600 font-mono transition-colors"
                   >
                     <FileText className="h-4 w-4 text-blue-500 shrink-0" />
-                    <span className="truncate">Reference File</span>
+                    <span className="truncate">{a.file_path}</span>
                   </a>
                 ))}
               </div>
@@ -320,8 +331,9 @@ export default function LogisticsViewReturnWarehousePage() {
                 Itemized Verification Manifest Table
               </h3>
               <span className="text-[11px] text-muted-foreground bg-slate-100 px-2 py-0.5 rounded">
-                Edit right-hand column values below to update dock arrival
-                volumes
+                {isAlreadySubmitted || ticket.status === "Closed"
+                  ? "Manifest submission finalized. Input values locked."
+                  : "Edit right-hand column values below to update dock arrival volumes"}
               </span>
             </div>
             <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
@@ -331,54 +343,67 @@ export default function LogisticsViewReturnWarehousePage() {
                     <TableHead>SKU Item Code</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead className="text-center w-[140px]">
-                      Requested Volume
+                      Requested Qty
                     </TableHead>
                     <TableHead className="text-center w-[160px] bg-slate-50/50">
-                      Actual Verified Volume
+                      Returned Qty
                     </TableHead>
                     <TableHead>Unit Type</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((item) => (
-                    <TableRow
-                      key={item.id}
-                      className="text-xs hover:bg-slate-50/50 align-middle"
-                    >
-                      <TableCell className="font-mono font-medium">
-                        {item.item_code}
-                      </TableCell>
-                      <TableCell
-                        className="max-w-[200px] truncate"
-                        title={item.item_description}
+                  {items.map((item) => {
+                    const isDiscrepancy =
+                      quantities[item.id] !== item.request_qty;
+
+                    return (
+                      <TableRow
+                        key={item.id}
+                        className="text-xs hover:bg-slate-50/50 align-middle"
                       >
-                        {item.item_description}
-                      </TableCell>
-                      <TableCell className="text-center font-medium text-slate-700">
-                        {item.request_qty}
-                      </TableCell>
-                      <TableCell className="bg-slate-50/30 p-2">
-                        <Input
-                          type="number"
-                          className="h-8 text-xs font-semibold text-center max-w-[120px] mx-auto bg-white"
-                          disabled={
-                            isLoadingApproval ||
-                            ticket.status === "Rejected" ||
-                            ticket.status === "Approved"
-                          }
-                          value={quantities[item.id] ?? ""}
-                          onChange={(e) =>
-                            handleQtyChange(item.id, e.target.value)
-                          }
-                          placeholder="Enter quantity"
-                          min={0}
-                        />
-                      </TableCell>
-                      <TableCell className="font-medium text-muted-foreground">
-                        {item.uom}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        <TableCell className="font-mono font-medium">
+                          {item.item_code}
+                        </TableCell>
+                        <TableCell
+                          className="max-w-[200px] truncate"
+                          title={item.item_description}
+                        >
+                          {item.item_description}
+                        </TableCell>
+                        <TableCell className="text-center font-medium text-slate-700">
+                          {item.request_qty}
+                        </TableCell>
+                        <TableCell className="bg-slate-50/30 p-2">
+                          <div className="flex items-center justify-center gap-1.5 max-w-[150px] mx-auto">
+                            <Input
+                              type="number"
+                              className="h-8 text-xs font-semibold text-center w-[100px] bg-white"
+                              disabled={
+                                isLoadingApproval ||
+                                isTerminated ||
+                                isAlreadySubmitted
+                              }
+                              value={quantities[item.id] ?? ""}
+                              onChange={(e) =>
+                                handleQtyChange(item.id, e.target.value)
+                              }
+                              placeholder="Enter quantity"
+                              min={0}
+                            />
+                            {isDiscrepancy && (
+                              <AlertTriangle
+                                className="h-4 w-4 text-amber-500 shrink-0"
+                                title="Quantity discrepancy detected against request"
+                              />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium text-muted-foreground">
+                          {item.uom}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -387,19 +412,21 @@ export default function LogisticsViewReturnWarehousePage() {
           {ticket.remarks && (
             <div className="bg-slate-50 p-4 rounded-xl border text-xs">
               <span className="font-semibold text-slate-700 block mb-1">
-                Remarks & Audit Logs:
+                Remarks:
               </span>
               <p className="italic text-slate-600 leading-relaxed">
                 {ticket.remarks}
               </p>
             </div>
           )}
+
+          <p className="text-xs">Reference ID: {ticket.id}</p>
         </div>
 
         {/* Real-Time Processing Sequence Timeline Sidebar */}
         <div className="w-full">
           <RequestTimeline
-            key={`${ticket.id}-${ticket.status}`}
+            key={`timeline-${ticket.id}-${ticket.status}-${refreshNonce}`}
             badOrderId={ticket.id}
           />
         </div>

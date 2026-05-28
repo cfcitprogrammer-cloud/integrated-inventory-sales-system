@@ -213,7 +213,7 @@ export default function CreateBadOrderPage() {
             ...formData,
             user_id: user.id,
             company_id: currentCompanyId,
-            status: "Pending",
+            status: "Open",
           },
         ])
         .select()
@@ -235,7 +235,9 @@ export default function CreateBadOrderPage() {
 
       await supabase()
         .from("tbl_bo_workflow")
-        .insert([{ bo_input_id: ticket.id, workflow_type: "" }]);
+        .insert([
+          { bo_input_id: ticket.id, workflow_type: formData.workflow_type },
+        ]);
 
       // 3. Process File Stream Uploads to Supabase Storage Bucket
       if (files.length > 0) {
@@ -375,7 +377,7 @@ export default function CreateBadOrderPage() {
                       outlet_name: o.customer_name,
                       bp_code: o.bp_code,
                     }));
-                    setOutletSearch(`${o.customer_name} (${o.bp_code})`);
+                    setOutletSearch(`${o.customer_name}`);
                     setShowOutletDropdown(false);
                   }}
                 >
@@ -474,7 +476,7 @@ export default function CreateBadOrderPage() {
                         item_description: `${v.name} (${v.products?.name || "No Parent Category"})`,
                         uom: v.uom || "PCS",
                       }));
-                      setSkuSearch(`${v.name} [${v.sku}]`);
+                      setSkuSearch(`${v.name}`);
                       setShowSkuDropdown(false);
                     }}
                   >
