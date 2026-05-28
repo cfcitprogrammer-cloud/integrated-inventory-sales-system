@@ -122,6 +122,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
       ],
     },
+    {
+      title: "AI Tools",
+      url: "/d/inventory/stocks-on-hand",
+      icon: Bot,
+      items: [
+        { title: "Stocks On-Hand", url: "/d/inventory/stocks-on-hand" },
+        { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
+      ],
+    },
   ];
 
   // Administrative control groups

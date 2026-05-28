@@ -165,7 +165,7 @@ export function LoginForm({
                   <Field>
                     <Button
                       type="submit"
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                      className="w-full"
                       disabled={isSubmitting}
                     >
                       {isSubmitting && (
@@ -200,14 +200,14 @@ export function LoginForm({
                   <button
                     key={idx}
                     onClick={() => routeToWorkspace(license)}
-                    className="flex items-center justify-between p-4 rounded-xl border border-border bg-card hover:bg-accent/40 hover:border-indigo-500 transition-all text-left group w-full"
+                    className="flex items-center justify-between p-4 rounded-xl border border-border bg-card transition-all text-left group w-full"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
+                      <div className="p-2 rounded-lg">
                         <Building2 className="h-5 w-5" />
                       </div>
                       <div className="flex flex-col">
-                        <span className="font-medium text-foreground group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                        <span className="font-medium text-foreground">
                           {license.tbl_companies?.company_name}
                         </span>
                         <span className="text-xs text-muted-foreground capitalize font-mono">
@@ -215,7 +215,7 @@ export function LoginForm({
                         </span>
                       </div>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:translate-x-1 transition-all" />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-all" />
                   </button>
                 ))}
 

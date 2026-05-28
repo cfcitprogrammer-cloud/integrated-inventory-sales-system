@@ -23,6 +23,10 @@ import ViewBadOrderDetailsPage from "@/views/pages/sales/view-bo";
 import AccountingDirectDisposalPage from "@/views/pages/accounting/direct-disposals";
 import AccountingViewDirectDisposalPage from "@/views/pages/accounting/view-direct-disposal";
 import LogisticsReturnToWHPage from "@/views/pages/logistics/return-to-wh";
+import LogisticsViewReturnWarehousePage from "@/views/pages/logistics/view-return-to-wh";
+import AccountingViewWarehouseReturnPage from "@/views/pages/accounting/view-wh-returns";
+import SalesToTradeReportPage from "@/views/pages/reports/stt";
+import BadOrderReportPage from "@/views/pages/reports/bo";
 
 function PendingActivationPage() {
   return (
@@ -209,15 +213,38 @@ export const protectedRoutes = [
         path: "view/direct-disposals/:id",
         element: <AccountingViewDirectDisposalPage />,
       },
+      {
+        path: "view/return-wh/:id",
+        element: <AccountingViewWarehouseReturnPage />,
+      },
     ],
   },
   {
     path: "/d/logistics",
-    allowedRoles: ["logistics", "admin"] as const,
+    allowedRoles: ["logistic", "admin"] as const,
     children: [
       {
         path: "return-wh/:id",
         element: <LogisticsReturnToWHPage />,
+      },
+      {
+        path: "view/return-wh/:id",
+        element: <LogisticsViewReturnWarehousePage />,
+      },
+    ],
+  },
+
+  {
+    path: "/d/reports",
+    allowedRoles: ["logistic", "admin"] as const,
+    children: [
+      {
+        path: "stt",
+        element: <SalesToTradeReportPage />,
+      },
+      {
+        path: "bo",
+        element: <BadOrderReportPage />,
       },
     ],
   },

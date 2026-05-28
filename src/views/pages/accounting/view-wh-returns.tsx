@@ -1,4 +1,4 @@
-// pages/bad-orders/ViewBadOrderDetailsPage.tsx
+// pages/bad-orders/AccountingViewWarehouseReturnPage.tsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -7,6 +7,7 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
+  Banknote,
 } from "lucide-react";
 import { supabase } from "@/config/db";
 import {
@@ -18,19 +19,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import RequestTimeline from "@/components/custom/timeline";
 
-export default function AccountingViewDirectDisposalPage() {
+export default function AccountingViewWarehouseReturnPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [ticket, setTicket] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
+  const [totalCost, setTotalCost] = useState<string>("");
+
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingApproval, setIsLoadingApproval] = useState(false);
 
-  // Helper to centralize loading fresh data on initial mount & post-mutation
+  // Core Data Fetch Engine
   async function fetchDetailedData() {
     if (!id) return;
     try {
@@ -39,10 +43,12 @@ export default function AccountingViewDirectDisposalPage() {
         .select("*")
         .eq("id", id)
         .single();
+
       const itemsRes = await supabase()
         .from("tbl_bo_input_items")
         .select("*")
         .eq("bo_input_id", id);
+
       const attachRes = await supabase()
         .from("tbl_bo_attachments")
         .select("*")
@@ -51,8 +57,16 @@ export default function AccountingViewDirectDisposalPage() {
       setTicket(ticketRes.data);
       setItems(itemsRes.data || []);
       setAttachments(attachRes.data || []);
+
+      // If a total cost was previously saved or cached, populate it
+      if (ticketRes.data?.total_cost !== null) {
+        setTotalCost(ticketRes.data.total_cost.toString());
+      }
     } catch (err) {
-      console.error("Failed loading manifest values matrix data hooks", err);
+      console.error(
+        "Failed loading accounting variance evaluation matrices:",
+        err,
+      );
     } finally {
       setIsLoading(false);
     }
@@ -66,7 +80,7 @@ export default function AccountingViewDirectDisposalPage() {
     return (
       <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span className="text-xs">Parsing tracking metrics...</span>
+        <span className="text-xs">Balancing credit and audit schemas...</span>
       </div>
     );
   }
@@ -75,7 +89,7 @@ export default function AccountingViewDirectDisposalPage() {
     return (
       <div className="p-6 text-center space-y-2">
         <p className="text-sm text-muted-foreground">
-          Target document metadata missing or deleted context error.
+          Target validation matrix missing or dead document pointer context.
         </p>
         <Button
           variant="outline"
@@ -89,29 +103,34 @@ export default function AccountingViewDirectDisposalPage() {
     );
   }
 
-  // Pure Transactional Execution Engine
+  // Pure Transactional Accounting Execution Engine
   async function handleWorkflowAction(actionType: "APPROVE" | "REJECTED") {
     try {
       setIsLoadingApproval(true);
-      const isDisposal = ticket.workflow_type === "For Disposal";
       const timestampIso = new Date().toISOString();
 
-      // 1. Prepare dynamic payload injections matching your explicit tracking schema rule sets
-      const workflowPayload = isDisposal
-        ? {
-            dd_acc_status: actionType,
-            dd_acc_updated_at: timestampIso,
-          }
-        : {
-            rwh_acc_updated_at: timestampIso,
-            // If rejected at accounting level on a Return, we can conclude or flag the AGM status
-            ...(actionType === "REJECTED" && {
-              rwh_agm_status: "REJECTED",
-              rwh_agm_updated_at: timestampIso,
-            }),
-          };
+      // 1. Enforce financial bounds validation on validation processing steps
+      if (actionType === "APPROVE") {
+        const parsedCost = parseFloat(totalCost);
+        if (isNaN(parsedCost) || parsedCost < 0) {
+          alert(
+            "Accounting Validation Fault: A clear, non-negative total validation aggregate cost must be assigned prior to credit tracking execution.",
+          );
+          return;
+        }
+      }
 
-      // 2. Perform the update mutation directly on the tracking table matching the current transaction ID
+      // 2. Prepare dynamic payload injections matching corporate accounting validation tracking schemas
+      const workflowPayload = {
+        rwh_acc_updated_at: timestampIso,
+        // Cascade down rejection tracking trees to automatically clean up subsequent gates
+        ...(actionType === "REJECTED" && {
+          rwh_agm_status: "REJECTED",
+          rwh_agm_updated_at: timestampIso,
+        }),
+      };
+
+      // Mutate historical workflow sequence tracks
       const { error: workflowError } = await supabase()
         .from("tbl_bo_workflow")
         .update(workflowPayload)
@@ -119,28 +138,32 @@ export default function AccountingViewDirectDisposalPage() {
 
       if (workflowError) throw workflowError;
 
-      // 3. Sync state back to core record tracking so master queues stay uniform
-      // If a document gets explicitly rejected here, the entire request lifecycle ends
+      // 3. Inject total aggregate calculation sums back onto core ticket layers alongside lifecycle synchronizations
       let syncedMasterStatus = ticket.status;
       if (actionType === "REJECTED") {
         syncedMasterStatus = "Rejected";
-      } else if (actionType === "APPROVE" && isDisposal) {
-        // Keeps it as Pending because it still needs to travel down the pipeline to the AGM desk
+      } else if (actionType === "APPROVE") {
+        // Keeps state pending as it travels onwards down the line items queue to General Management (AGM)
         syncedMasterStatus = "Pending";
+      }
+
+      const updatePayload: any = { status: syncedMasterStatus };
+      if (actionType === "APPROVE") {
+        updatePayload.total_cost = parseFloat(totalCost);
       }
 
       const { error: masterTicketError } = await supabase()
         .from("tbl_bo_input")
-        .update({ status: syncedMasterStatus })
+        .update(updatePayload)
         .eq("id", ticket.id);
 
       if (masterTicketError) throw masterTicketError;
 
-      // 4. Hot-reload components gracefully instead of triggering a full window document refresh
+      // Refresh data layers to re-evaluate tracking views smoothly
       await fetchDetailedData();
     } catch (error: any) {
       console.error(
-        "Critical error processing workflow step optimization rules:",
+        "Critical error processing accounting workflow audit mutations:",
         error.message,
       );
       alert(`Pipeline Mutation Fault: ${error.message}`);
@@ -163,34 +186,17 @@ export default function AccountingViewDirectDisposalPage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <h1 className="text-xl font-bold tracking-tight">
-              Return/BO Document Trace: {ticket.bp_code}
+              Accounting Valuation Review: {ticket.bp_code}
             </h1>
           </div>
           <p className="text-xs text-muted-foreground pl-9">
-            Filing verification metadata timeline.
+            Financial auditing, total cost allocation execution, and milestone
+            verification timelines.
           </p>
         </div>
 
         {/* Action Button Controls Module */}
         <div className="flex items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
-          <Button
-            variant="destructive"
-            size="sm"
-            className="flex-1 sm:flex-none text-xs"
-            disabled={
-              isLoadingApproval ||
-              ticket.status === "Rejected" ||
-              ticket.status === "Approved"
-            }
-            onClick={() => handleWorkflowAction("REJECTED")}
-          >
-            {isLoadingApproval ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-            ) : (
-              <XCircle className="h-3.5 w-3.5 mr-1" />
-            )}
-            Reject
-          </Button>
           <Button
             size="sm"
             className="flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -206,12 +212,12 @@ export default function AccountingViewDirectDisposalPage() {
             ) : (
               <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
             )}
-            Approve
+            Approve & Forward Financials
           </Button>
         </div>
       </div>
 
-      {/* Grid panels layout: Splitting transaction metadata from the real-time tracking timeline component */}
+      {/* Main Structuring Layout Grids */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
           <div className="grid grid-cols-3 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
@@ -275,51 +281,92 @@ export default function AccountingViewDirectDisposalPage() {
             </div>
           )}
 
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
-              Itemized Manifest Table
-            </h3>
-            <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SKU Item Code</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-center">
-                      Requested Volume
-                    </TableHead>
-                    <TableHead className="text-center">
-                      Actual Verified Volume
-                    </TableHead>
-                    <TableHead>Unit Type</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => (
-                    <TableRow
-                      key={item.id}
-                      className="text-xs hover:bg-slate-50/50"
-                    >
-                      <TableCell className="font-mono font-medium">
-                        {item.item_code}
-                      </TableCell>
-                      <TableCell
-                        className="max-w-[240px] truncate"
-                        title={item.item_description}
-                      >
-                        {item.item_description}
-                      </TableCell>
-                      <TableCell className="text-center font-medium text-slate-700">
-                        {item.request_qty}
-                      </TableCell>
-                      <TableCell className="text-center italic text-muted-foreground">
-                        {item.actual_qty ?? "Awaiting Count"}
-                      </TableCell>
-                      <TableCell>{item.uom}</TableCell>
+          {/* Locked-Down Logistics Reference Manifest Table */}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
+                Audited Itemized Verification Manifest
+              </h3>
+              <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>SKU Item Code</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-center">
+                        Requested Qty
+                      </TableHead>
+                      <TableHead className="text-center bg-emerald-50/30 text-emerald-900 font-semibold">
+                        Logistics Counted Qty
+                      </TableHead>
+                      <TableHead>Unit Type</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item) => (
+                      <TableRow
+                        key={item.id}
+                        className="text-xs hover:bg-slate-50/50"
+                      >
+                        <TableCell className="font-mono font-medium">
+                          {item.item_code}
+                        </TableCell>
+                        <TableCell
+                          className="max-w-[240px] truncate"
+                          title={item.item_description}
+                        >
+                          {item.item_description}
+                        </TableCell>
+                        <TableCell className="text-center text-muted-foreground font-medium">
+                          {item.request_qty}
+                        </TableCell>
+                        <TableCell className="text-center font-bold bg-emerald-50/10 text-emerald-700">
+                          {item.actual_qty ?? (
+                            <span className="text-red-500 font-normal italic text-[11px]">
+                              Skipped Floor Count
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>{item.uom}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            {/* Centralized Aggregated Value Input Section */}
+            <div className="bg-slate-900 text-slate-100 p-5 rounded-xl border border-slate-800 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Banknote className="h-4 w-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">
+                    Total Valuation Cost Matrix
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-400 max-w-md">
+                  Evaluate floor counts above and summarize the bulk adjusted
+                  financial loss valuation below.
+                </p>
+              </div>
+
+              <div className="w-full md:w-auto flex items-center gap-3">
+                <span className="text-sm font-semibold text-slate-300">₱</span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  className="h-10 text-sm font-mono font-bold bg-slate-950 border-slate-700 text-emerald-400 focus-visible:ring-emerald-500 text-right w-full md:w-[200px]"
+                  placeholder="0.00"
+                  disabled={
+                    isLoadingApproval ||
+                    ticket.status === "Rejected" ||
+                    ticket.status === "Approved"
+                  }
+                  value={totalCost}
+                  onChange={(e) => setTotalCost(e.target.value)}
+                  min={0}
+                />
+              </div>
             </div>
           </div>
 
@@ -335,9 +382,8 @@ export default function AccountingViewDirectDisposalPage() {
           )}
         </div>
 
-        {/* Interactive Self-Fetching Workflow Timeline Sidebar Column */}
+        {/* Real-Time Processing Sequence Timeline Sidebar */}
         <div className="w-full">
-          {/* Keying the component directly to an active ticket status string guarantees the internal timeline hooks re-fetch whenever the parent document state gets updated inside PostgreSQL */}
           <RequestTimeline
             key={`${ticket.id}-${ticket.status}`}
             badOrderId={ticket.id}

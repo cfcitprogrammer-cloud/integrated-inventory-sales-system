@@ -28,7 +28,7 @@ export interface DisposalRequestPayload {
 
 // 2. Define the payload shape that Apps Script expects
 interface WebhookPayload extends DisposalRequestPayload {
-  action: "NEW_DISPOSAL_REQUEST";
+  action: "NEW_DISPOSAL_REQUEST" | "NEW_RETURN_WH_REQUEST";
 }
 
 export const emailNotifierUtil = {
@@ -39,6 +39,20 @@ export const emailNotifierUtil = {
   sendDirectDisposalAlert: (data: DisposalRequestPayload): void => {
     const payload: WebhookPayload = {
       action: "NEW_DISPOSAL_REQUEST",
+      ...data,
+    };
+
+    // 🚀 FIRE-AND-FORGET: Trigger axios post immediately.
+    // We don't return this promise, nor do we await it.
+    axios.post(WEBAPP_GAS_URL, JSON.stringify(payload)).catch((error) => {
+      // Caught silently in the background
+      console.error("Background Notification Dispatch Failed:", error);
+    });
+  },
+
+  sendReturnToWHAlert: (data: DisposalRequestPayload): void => {
+    const payload: WebhookPayload = {
+      action: "NEW_RETURN_WH_REQUEST",
       ...data,
     };
 

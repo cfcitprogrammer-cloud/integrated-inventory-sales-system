@@ -235,7 +235,7 @@ export default function CreateBadOrderPage() {
 
       await supabase()
         .from("tbl_bo_workflow")
-        .insert([{ bo_input_id: ticket.id, workflow_type:  }]);
+        .insert([{ bo_input_id: ticket.id, workflow_type: "" }]);
 
       // 3. Process File Stream Uploads to Supabase Storage Bucket
       if (files.length > 0) {
@@ -276,6 +276,26 @@ export default function CreateBadOrderPage() {
         // 4. Fire-and-Forget Email Notification Service (Non-blocking step)
         // Only fire email if workflow matches the direct disposal route parameter rules
         emailNotifierUtil.sendDirectDisposalAlert({
+          requestId: String(ticket.id),
+          submittedBy:
+            user.user_metadata?.full_name || user.email || "System Operator",
+          department: "Logistics/Warehouse Operations",
+          dateTime: new Date(ticket.created_at || Date.now()).toLocaleString(),
+          warehouseLocation: "Central Sorting Hub",
+          // Format layout parameters explicitly to match your DisposalItem interface typing configurations
+          items: manifestItems.map((m) => ({
+            sku: m.item_code,
+            description: m.item_description,
+            uom: m.uom,
+            qty: Number(m.request_qty),
+          })),
+          attachments: uploadedAttachments, // Injected dynamic public cloud URLs
+          remarks: ticket.remarks,
+          customerName: ticket.outlet_name,
+        });
+      } else {
+        alert("HEY");
+        emailNotifierUtil.sendReturnToWHAlert({
           requestId: String(ticket.id),
           submittedBy:
             user.user_metadata?.full_name || user.email || "System Operator",

@@ -179,7 +179,7 @@ export default function ViewBadOrderDetailsPage() {
                 href={
                   supabase()
                     .storage.from("bad-orders-attachments")
-                    .getPublicUrl(a.filepath).data.publicUrl
+                    .getPublicUrl(a.file_path).data.publicUrl
                 }
                 target="_blank"
                 rel="noreferrer"

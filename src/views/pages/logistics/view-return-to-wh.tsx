@@ -1,4 +1,4 @@
-// pages/bad-orders/ViewBadOrderDetailsPage.tsx
+// pages/bad-orders/ViewReturnWarehouseDetailsPage.tsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -7,6 +7,7 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
+  Save,
 } from "lucide-react";
 import { supabase } from "@/config/db";
 import {
@@ -18,19 +19,26 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import RequestTimeline from "@/components/custom/timeline";
 
-export default function AccountingViewDirectDisposalPage() {
+interface QuantityState {
+  [itemId: string]: number | "";
+}
+
+export default function LogisticsViewReturnWarehousePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [ticket, setTicket] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
+  const [quantities, setQuantities] = useState<QuantityState>({});
+
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingApproval, setIsLoadingApproval] = useState(false);
 
-  // Helper to centralize loading fresh data on initial mount & post-mutation
+  // Core Data Fetch Engine
   async function fetchDetailedData() {
     if (!id) return;
     try {
@@ -39,20 +47,35 @@ export default function AccountingViewDirectDisposalPage() {
         .select("*")
         .eq("id", id)
         .single();
+
       const itemsRes = await supabase()
         .from("tbl_bo_input_items")
         .select("*")
         .eq("bo_input_id", id);
+
       const attachRes = await supabase()
         .from("tbl_bo_attachments")
         .select("*")
         .eq("bo_input_id", id);
 
+      const fetchedItems = itemsRes.data || [];
       setTicket(ticketRes.data);
-      setItems(itemsRes.data || []);
+      setItems(fetchedItems);
       setAttachments(attachRes.data || []);
+
+      // Build initial dynamic quantities layout from current database snapshot
+      const initialQuantities: QuantityState = {};
+      fetchedItems.forEach((item) => {
+        // Fallback to the requested volume defaults if no count has been recorded yet
+        initialQuantities[item.id] =
+          item.actual_qty !== null ? item.actual_qty : item.request_qty;
+      });
+      setQuantities(initialQuantities);
     } catch (err) {
-      console.error("Failed loading manifest values matrix data hooks", err);
+      console.error(
+        "Failed loading warehouse logistics manifest matrix data hooks",
+        err,
+      );
     } finally {
       setIsLoading(false);
     }
@@ -62,11 +85,23 @@ export default function AccountingViewDirectDisposalPage() {
     fetchDetailedData();
   }, [id]);
 
+  // Handle live numeric changes on the warehouse floor layout
+  const handleQtyChange = (itemId: string, val: string) => {
+    if (val === "") {
+      setQuantities((prev) => ({ ...prev, [itemId]: "" }));
+      return;
+    }
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed) && parsed >= 0) {
+      setQuantities((prev) => ({ ...prev, [itemId]: parsed }));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span className="text-xs">Parsing tracking metrics...</span>
+        <span className="text-xs">Parsing logistics tracking metrics...</span>
       </div>
     );
   }
@@ -75,7 +110,7 @@ export default function AccountingViewDirectDisposalPage() {
     return (
       <div className="p-6 text-center space-y-2">
         <p className="text-sm text-muted-foreground">
-          Target document metadata missing or deleted context error.
+          Target RWH document metadata missing or deleted context error.
         </p>
         <Button
           variant="outline"
@@ -89,29 +124,36 @@ export default function AccountingViewDirectDisposalPage() {
     );
   }
 
-  // Pure Transactional Execution Engine
+  // Pure Transactional Logistics Execution Engine
   async function handleWorkflowAction(actionType: "APPROVE" | "REJECTED") {
     try {
       setIsLoadingApproval(true);
-      const isDisposal = ticket.workflow_type === "For Disposal";
       const timestampIso = new Date().toISOString();
 
-      // 1. Prepare dynamic payload injections matching your explicit tracking schema rule sets
-      const workflowPayload = isDisposal
-        ? {
-            dd_acc_status: actionType,
-            dd_acc_updated_at: timestampIso,
-          }
-        : {
-            rwh_acc_updated_at: timestampIso,
-            // If rejected at accounting level on a Return, we can conclude or flag the AGM status
-            ...(actionType === "REJECTED" && {
-              rwh_agm_status: "REJECTED",
-              rwh_agm_updated_at: timestampIso,
-            }),
-          };
+      // 1. Validate that all inputs have values filled out before processing an approval
+      if (actionType === "APPROVE") {
+        const hasMissingFields = items.some(
+          (item) => quantities[item.id] === "",
+        );
+        if (hasMissingFields) {
+          alert(
+            "Logistics processing fault: Please ensure all verified volume inputs are valid integers before submission.",
+          );
+          return;
+        }
+      }
 
-      // 2. Perform the update mutation directly on the tracking table matching the current transaction ID
+      // 2. Prepare dynamic payload tracking injections matching Logistics metrics schema rule sets
+      const workflowPayload = {
+        rwh_logistic_updated_at: timestampIso,
+        // Concurrently handle cascades down to subsequent routing desks if explicitly rejected
+        ...(actionType === "REJECTED" && {
+          rwh_agm_status: "REJECTED",
+          rwh_agm_updated_at: timestampIso,
+        }),
+      };
+
+      // Update workflow sequence records directly
       const { error: workflowError } = await supabase()
         .from("tbl_bo_workflow")
         .update(workflowPayload)
@@ -119,13 +161,26 @@ export default function AccountingViewDirectDisposalPage() {
 
       if (workflowError) throw workflowError;
 
-      // 3. Sync state back to core record tracking so master queues stay uniform
-      // If a document gets explicitly rejected here, the entire request lifecycle ends
+      // 3. Update actual inventory line counts on the database if approved
+      if (actionType === "APPROVE") {
+        const updatePromises = items.map((item) =>
+          supabase()
+            .from("tbl_bo_input_items")
+            .update({ actual_qty: quantities[item.id] })
+            .eq("id", item.id),
+        );
+
+        const results = await Promise.all(updatePromises);
+        const processingError = results.find((res) => res.error);
+        if (processingError) throw processingError.error;
+      }
+
+      // 4. Sync master statuses to cleanly close or route life cycles forward
       let syncedMasterStatus = ticket.status;
       if (actionType === "REJECTED") {
         syncedMasterStatus = "Rejected";
-      } else if (actionType === "APPROVE" && isDisposal) {
-        // Keeps it as Pending because it still needs to travel down the pipeline to the AGM desk
+      } else if (actionType === "APPROVE") {
+        // Retain pending status since it must advance downstream to the next step (e.g. AGM desk)
         syncedMasterStatus = "Pending";
       }
 
@@ -136,11 +191,11 @@ export default function AccountingViewDirectDisposalPage() {
 
       if (masterTicketError) throw masterTicketError;
 
-      // 4. Hot-reload components gracefully instead of triggering a full window document refresh
+      // Hot-reload view component data mapping state arrays gracefully
       await fetchDetailedData();
     } catch (error: any) {
       console.error(
-        "Critical error processing workflow step optimization rules:",
+        "Critical error processing logistics workflow optimization rules:",
         error.message,
       );
       alert(`Pipeline Mutation Fault: ${error.message}`);
@@ -163,34 +218,17 @@ export default function AccountingViewDirectDisposalPage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <h1 className="text-xl font-bold tracking-tight">
-              Return/BO Document Trace: {ticket.bp_code}
+              Return to Warehouse Audit Trace: {ticket.bp_code}
             </h1>
           </div>
           <p className="text-xs text-muted-foreground pl-9">
-            Filing verification metadata timeline.
+            Logistics intake counting, physical item verification, and tracking
+            timeline.
           </p>
         </div>
 
         {/* Action Button Controls Module */}
         <div className="flex items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
-          <Button
-            variant="destructive"
-            size="sm"
-            className="flex-1 sm:flex-none text-xs"
-            disabled={
-              isLoadingApproval ||
-              ticket.status === "Rejected" ||
-              ticket.status === "Approved"
-            }
-            onClick={() => handleWorkflowAction("REJECTED")}
-          >
-            {isLoadingApproval ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-            ) : (
-              <XCircle className="h-3.5 w-3.5 mr-1" />
-            )}
-            Reject
-          </Button>
           <Button
             size="sm"
             className="flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -206,12 +244,12 @@ export default function AccountingViewDirectDisposalPage() {
             ) : (
               <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
             )}
-            Approve
+            Submit and Verify Counts
           </Button>
         </div>
       </div>
 
-      {/* Grid panels layout: Splitting transaction metadata from the real-time tracking timeline component */}
+      {/* Main Structural Panels Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
           <div className="grid grid-cols-3 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
@@ -275,20 +313,27 @@ export default function AccountingViewDirectDisposalPage() {
             </div>
           )}
 
+          {/* Logistics Interactive Verification Manifest */}
           <div className="space-y-2">
-            <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
-              Itemized Manifest Table
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
+                Itemized Verification Manifest Table
+              </h3>
+              <span className="text-[11px] text-muted-foreground bg-slate-100 px-2 py-0.5 rounded">
+                Edit right-hand column values below to update dock arrival
+                volumes
+              </span>
+            </div>
             <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>SKU Item Code</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead className="text-center">
+                    <TableHead className="text-center w-[140px]">
                       Requested Volume
                     </TableHead>
-                    <TableHead className="text-center">
+                    <TableHead className="text-center w-[160px] bg-slate-50/50">
                       Actual Verified Volume
                     </TableHead>
                     <TableHead>Unit Type</TableHead>
@@ -298,13 +343,13 @@ export default function AccountingViewDirectDisposalPage() {
                   {items.map((item) => (
                     <TableRow
                       key={item.id}
-                      className="text-xs hover:bg-slate-50/50"
+                      className="text-xs hover:bg-slate-50/50 align-middle"
                     >
                       <TableCell className="font-mono font-medium">
                         {item.item_code}
                       </TableCell>
                       <TableCell
-                        className="max-w-[240px] truncate"
+                        className="max-w-[200px] truncate"
                         title={item.item_description}
                       >
                         {item.item_description}
@@ -312,10 +357,26 @@ export default function AccountingViewDirectDisposalPage() {
                       <TableCell className="text-center font-medium text-slate-700">
                         {item.request_qty}
                       </TableCell>
-                      <TableCell className="text-center italic text-muted-foreground">
-                        {item.actual_qty ?? "Awaiting Count"}
+                      <TableCell className="bg-slate-50/30 p-2">
+                        <Input
+                          type="number"
+                          className="h-8 text-xs font-semibold text-center max-w-[120px] mx-auto bg-white"
+                          disabled={
+                            isLoadingApproval ||
+                            ticket.status === "Rejected" ||
+                            ticket.status === "Approved"
+                          }
+                          value={quantities[item.id] ?? ""}
+                          onChange={(e) =>
+                            handleQtyChange(item.id, e.target.value)
+                          }
+                          placeholder="Enter quantity"
+                          min={0}
+                        />
                       </TableCell>
-                      <TableCell>{item.uom}</TableCell>
+                      <TableCell className="font-medium text-muted-foreground">
+                        {item.uom}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -335,9 +396,8 @@ export default function AccountingViewDirectDisposalPage() {
           )}
         </div>
 
-        {/* Interactive Self-Fetching Workflow Timeline Sidebar Column */}
+        {/* Real-Time Processing Sequence Timeline Sidebar */}
         <div className="w-full">
-          {/* Keying the component directly to an active ticket status string guarantees the internal timeline hooks re-fetch whenever the parent document state gets updated inside PostgreSQL */}
           <RequestTimeline
             key={`${ticket.id}-${ticket.status}`}
             badOrderId={ticket.id}
