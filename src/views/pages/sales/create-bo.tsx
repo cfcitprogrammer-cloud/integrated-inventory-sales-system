@@ -1,5 +1,5 @@
 // pages/bad-orders/CreateBadOrderPage.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -51,6 +51,10 @@ export default function CreateBadOrderPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // --- Click Outside Refs ---
+  const outletRef = useRef<HTMLDivElement>(null);
+  const skuRef = useRef<HTMLDivElement>(null);
+
   // --- Outlet Autocomplete States ---
   const [outletSearch, setOutletSearch] = useState("");
   const [debouncedOutletSearch, setDebouncedOutletSearch] = useState("");
@@ -92,6 +96,23 @@ export default function CreateBadOrderPage() {
     }
   }, [currentCompanyId, navigate]);
 
+  // --- Click Outside Dropdowns Handler ---
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        outletRef.current &&
+        !outletRef.current.contains(event.target as Node)
+      ) {
+        setShowOutletDropdown(false);
+      }
+      if (skuRef.current && !skuRef.current.contains(event.target as Node)) {
+        setShowSkuDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   // --- Debounce Timers ---
   useEffect(() => {
     const t = setTimeout(() => setDebouncedOutletSearch(outletSearch), 300);
@@ -125,7 +146,7 @@ export default function CreateBadOrderPage() {
     queryOutlets();
   }, [debouncedOutletSearch, formData.bp_code]);
 
-  // --- Query Product Variants from Extension Server (Using your exact parameters) ---
+  // --- Query Product Variants from Extension Server ---
   useEffect(() => {
     async function querySkus() {
       const q = debouncedSkuSearch.trim();
@@ -200,11 +221,6 @@ export default function CreateBadOrderPage() {
       } = await supabase().auth.getUser();
       if (!user) throw new Error("Authentication state missing.");
 
-      const initialWorkflowStep =
-        formData.workflow_type === "For Disposal"
-          ? "Accounting Verification"
-          : "Logistics Counting";
-
       // 1. Insert Master Ticket Layout
       const { data: ticket, error: tErr } = await supabase()
         .from("tbl_bo_input")
@@ -227,8 +243,6 @@ export default function CreateBadOrderPage() {
         .from("tbl_bo_input_items")
         .insert(skus);
       if (iErr) throw iErr;
-
-      console.log(files);
 
       // Array to temporarily hold file metadata for the email payload pipeline
       const uploadedAttachments: { name: string; url: string }[] = [];
@@ -270,54 +284,33 @@ export default function CreateBadOrderPage() {
         }
       }
 
-      toast.success(
-        "Manifest successfully initiated inside system routing pipelines.",
-      );
+      toast.success("Bad Order requested successfully.");
+
+      const commonEmailPayload = {
+        requestId: String(ticket.id),
+        submittedBy:
+          user.user_metadata?.full_name || user.email || "System Operator",
+        department: "Logistics/Warehouse Operations",
+        dateTime: new Date(ticket.created_at || Date.now()).toLocaleString(),
+        warehouseLocation: "Central Sorting Hub",
+        items: manifestItems.map((m) => ({
+          sku: m.item_code,
+          description: m.item_description,
+          uom: m.uom,
+          qty: Number(m.request_qty),
+        })),
+        attachments: uploadedAttachments,
+        remarks: ticket.remarks,
+        customerName: ticket.outlet_name,
+      };
 
       if (formData.workflow_type === "For Disposal") {
-        // 4. Fire-and-Forget Email Notification Service (Non-blocking step)
-        // Only fire email if workflow matches the direct disposal route parameter rules
-        emailNotifierUtil.sendDirectDisposalAlert({
-          requestId: String(ticket.id),
-          submittedBy:
-            user.user_metadata?.full_name || user.email || "System Operator",
-          department: "Logistics/Warehouse Operations",
-          dateTime: new Date(ticket.created_at || Date.now()).toLocaleString(),
-          warehouseLocation: "Central Sorting Hub",
-          // Format layout parameters explicitly to match your DisposalItem interface typing configurations
-          items: manifestItems.map((m) => ({
-            sku: m.item_code,
-            description: m.item_description,
-            uom: m.uom,
-            qty: Number(m.request_qty),
-          })),
-          attachments: uploadedAttachments, // Injected dynamic public cloud URLs
-          remarks: ticket.remarks,
-          customerName: ticket.outlet_name,
-        });
+        emailNotifierUtil.sendDirectDisposalAlert(commonEmailPayload);
       } else {
-        alert("HEY");
-        emailNotifierUtil.sendReturnToWHAlert({
-          requestId: String(ticket.id),
-          submittedBy:
-            user.user_metadata?.full_name || user.email || "System Operator",
-          department: "Logistics/Warehouse Operations",
-          dateTime: new Date(ticket.created_at || Date.now()).toLocaleString(),
-          warehouseLocation: "Central Sorting Hub",
-          // Format layout parameters explicitly to match your DisposalItem interface typing configurations
-          items: manifestItems.map((m) => ({
-            sku: m.item_code,
-            description: m.item_description,
-            uom: m.uom,
-            qty: Number(m.request_qty),
-          })),
-          attachments: uploadedAttachments, // Injected dynamic public cloud URLs
-          remarks: ticket.remarks,
-          customerName: ticket.outlet_name,
-        });
+        emailNotifierUtil.sendReturnToWHAlert(commonEmailPayload);
       }
 
-      // navigate("/bad-orders");
+      navigate("/sales/bo/1");
     } catch (err: any) {
       toast.error(
         err.message ||
@@ -329,34 +322,39 @@ export default function CreateBadOrderPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4">
       <div className="flex items-center gap-3 border-b pb-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight">
-            Log Bad Order / Return Request
+            Request Bad Order
           </h1>
           <p className="text-xs text-muted-foreground">
-            Build SKU logs and declare dynamic department targets.
+            Fill up your bad orders here.
           </p>
         </div>
       </div>
 
       <form onSubmit={handleFormSubmission} className="space-y-5">
         {/* --- CUSTOMER OUTLET AUTOCOMPLETE --- */}
-        <div className="space-y-1 relative">
+        <div ref={outletRef} className="space-y-1 relative">
           <label className="text-xs font-semibold text-slate-700">
-            Account Client Lookup
+            Outlet Name
           </label>
           <div className="relative">
             <Input
               required
-              placeholder="Type customer name or BP code string..."
+              placeholder="Type customer name or BP code..."
               value={outletSearch}
               onChange={(e) => {
                 setOutletSearch(e.target.value);
                 setShowOutletDropdown(true);
-                if (!e.target.value)
+                if (!e.target.value) {
                   setFormData((p) => ({ ...p, outlet_name: "", bp_code: "" }));
+                  setOutlets([]);
+                } else if (formData.bp_code) {
+                  // Reset key if they clear selection back to typing mode
+                  setFormData((p) => ({ ...p, outlet_name: "", bp_code: "" }));
+                }
               }}
               onFocus={() => setShowOutletDropdown(true)}
             />
@@ -365,28 +363,34 @@ export default function CreateBadOrderPage() {
             )}
           </div>
 
-          {showOutletDropdown && outlets.length > 0 && (
-            <div className="absolute left-0 right-0 z-50 mt-1 max-h-36 overflow-y-auto rounded-md border bg-popover shadow-md p-1">
-              {outlets.map((o) => (
-                <div
-                  key={o.card_code}
-                  className="p-2 text-xs hover:bg-accent rounded-sm cursor-pointer"
-                  onClick={() => {
-                    setFormData((p) => ({
-                      ...p,
-                      outlet_name: o.customer_name,
-                      bp_code: o.bp_code,
-                    }));
-                    setOutletSearch(`${o.customer_name}`);
-                    setShowOutletDropdown(false);
-                  }}
-                >
-                  <div className="font-medium">{o.customer_name}</div>
-                  <div className="text-[10px] font-mono text-muted-foreground">
-                    {o.bp_code}
-                  </div>
+          {showOutletDropdown && outletSearch.trim().length >= 2 && (
+            <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md p-1">
+              {outlets.length === 0 && !isSearchingOutlets ? (
+                <div className="p-3 text-xs text-center text-muted-foreground">
+                  No outlets found
                 </div>
-              ))}
+              ) : (
+                outlets.map((o) => (
+                  <div
+                    key={o.bp_code}
+                    className="p-2 text-xs hover:bg-accent rounded-sm cursor-pointer"
+                    onClick={() => {
+                      setFormData((p) => ({
+                        ...p,
+                        outlet_name: o.customer_name,
+                        bp_code: o.bp_code,
+                      }));
+                      setOutletSearch(o.customer_name);
+                      setShowOutletDropdown(false);
+                    }}
+                  >
+                    <div className="font-medium">{o.customer_name}</div>
+                    <div className="text-[10px] font-mono text-muted-foreground">
+                      {o.bp_code}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
@@ -394,20 +398,24 @@ export default function CreateBadOrderPage() {
         {/* --- WORKFLOW TYPE SELECTION --- */}
         <div className="space-y-2">
           <label className="text-xs font-semibold block text-slate-700">
-            Strategic Route Assignment
+            Route Assignment
           </label>
           <div className="grid grid-cols-2 gap-3">
             <div
               onClick={() =>
                 setFormData((p) => ({ ...p, workflow_type: "For Disposal" }))
               }
-              className={`p-3 rounded-lg border cursor-pointer text-center space-y-1 ${formData.workflow_type === "For Disposal" ? "border-orange-500 bg-orange-50/30" : "bg-card"}`}
+              className={`p-3 rounded-lg border cursor-pointer text-center space-y-1 transition-all ${
+                formData.workflow_type === "For Disposal"
+                  ? "border-orange-500 bg-orange-50/30 ring-1 ring-orange-500"
+                  : "bg-card hover:bg-slate-50"
+              }`}
             >
               <div className="text-xs font-bold text-orange-600">
                 For Direct Disposal
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Skips warehouse loops. Routes to Accounting directly.
+                Skips Logistics counting. Proceed for disposal.
               </p>
             </div>
             <div
@@ -417,13 +425,17 @@ export default function CreateBadOrderPage() {
                   workflow_type: "Return to Warehouse",
                 }))
               }
-              className={`p-3 rounded-lg border cursor-pointer text-center space-y-1 ${formData.workflow_type === "Return to Warehouse" ? "border-blue-500 bg-blue-50/40" : "bg-card"}`}
+              className={`p-3 rounded-lg border cursor-pointer text-center space-y-1 transition-all ${
+                formData.workflow_type === "Return to Warehouse"
+                  ? "border-blue-500 bg-blue-50/40 ring-1 ring-blue-500"
+                  : "bg-card hover:bg-slate-50"
+              }`}
             >
               <div className="text-xs font-bold text-blue-600">
                 Return to Stock
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Routes to Logistics counting validation layout first.
+                Routes to Logistics counting validation first.
               </p>
             </div>
           </div>
@@ -432,28 +444,36 @@ export default function CreateBadOrderPage() {
         {/* --- SKU PRODUCT VARIANT MANIFEST CONSOLE WITH AUTOCOMPLETE LOOKUP --- */}
         <div className="border rounded-xl p-4 space-y-3 bg-slate-50/50">
           <h3 className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-            Dynamic SKU Manifest Ledger Builder
+            Item Ledger Builder
           </h3>
 
-          <div className="space-y-2 relative">
+          <div ref={skuRef} className="space-y-2 relative">
             <label className="text-[10px] font-semibold text-muted-foreground uppercase">
-              Search Variant Catalog SKU
+              Search Catalog SKU
             </label>
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search variant name, code, or alias..."
+                placeholder="Search product name, code, or alias..."
                 value={skuSearch}
                 className="pl-9 bg-background"
                 onChange={(e) => {
                   setSkuSearch(e.target.value);
                   setShowSkuDropdown(true);
-                  if (!e.target.value)
+                  if (!e.target.value) {
                     setCurrentItem((p) => ({
                       ...p,
                       item_code: "",
                       item_description: "",
                     }));
+                    setVariants([]);
+                  } else if (currentItem.item_code) {
+                    setCurrentItem((p) => ({
+                      ...p,
+                      item_code: "",
+                      item_description: "",
+                    }));
+                  }
                 }}
                 onFocus={() => setShowSkuDropdown(true)}
               />
@@ -462,56 +482,61 @@ export default function CreateBadOrderPage() {
               )}
             </div>
 
-            {/* product_variant relational overlay dropdown panel */}
-            {showSkuDropdown && variants.length > 0 && (
+            {showSkuDropdown && skuSearch.trim().length >= 2 && (
               <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md p-1">
-                {variants.map((v) => (
-                  <div
-                    key={v.sku}
-                    className="p-2 text-xs hover:bg-accent rounded-sm cursor-pointer flex justify-between items-start gap-4"
-                    onClick={() => {
-                      setCurrentItem((prev) => ({
-                        ...prev,
-                        item_code: v.sku,
-                        item_description: `${v.name} (${v.products?.name || "No Parent Category"})`,
-                        uom: v.uom || "PCS",
-                      }));
-                      setSkuSearch(`${v.name}`);
-                      setShowSkuDropdown(false);
-                    }}
-                  >
-                    <div className="space-y-0.5">
-                      <div className="font-medium text-foreground">
-                        {v.name}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground font-mono flex gap-2">
-                        <span>SKU: {v.sku}</span>
-                        {v.alias && <span>Alias: {v.alias}</span>}
-                      </div>
-                      {v.products && (
-                        <div className="text-[9px] text-blue-600 bg-blue-50 px-1 py-0.2 rounded w-fit">
-                          Parent: {v.products.name} •{" "}
-                          {v.products.category || "Unassigned"}
+                {variants.length === 0 && !isSearchingSkus ? (
+                  <div className="p-3 text-xs text-center text-muted-foreground">
+                    No items found
+                  </div>
+                ) : (
+                  variants.map((v) => (
+                    <div
+                      key={v.sku}
+                      className="p-2 text-xs hover:bg-accent rounded-sm cursor-pointer flex justify-between items-start gap-4"
+                      onClick={() => {
+                        setCurrentItem((prev) => ({
+                          ...prev,
+                          item_code: v.sku,
+                          item_description: v.name,
+                          uom: v.uom || "PCS",
+                        }));
+                        setSkuSearch(v.name);
+                        setShowSkuDropdown(false);
+                      }}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="font-medium text-foreground">
+                          {v.name}
                         </div>
+                        <div className="text-[10px] text-muted-foreground font-mono flex gap-2">
+                          <span>SKU: {v.sku}</span>
+                          {v.alias && <span>Alias: {v.alias}</span>}
+                        </div>
+                        {v.products && (
+                          <div className="text-[9px] text-blue-600 bg-blue-50 px-1 py-0.2 rounded w-fit mt-1">
+                            {v.products.name} •{" "}
+                            {v.products.category || "Unassigned"}
+                          </div>
+                        )}
+                      </div>
+                      {v.uom && (
+                        <span className="text-[9px] bg-muted px-1.5 py-0.5 rounded text-slate-500 font-mono shrink-0">
+                          {v.uom}
+                        </span>
                       )}
                     </div>
-                    {v.uom && (
-                      <span className="text-[9px] bg-muted px-1.5 py-0.5 rounded text-slate-500 font-mono shrink-0">
-                        {v.uom}
-                      </span>
-                    )}
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             )}
           </div>
 
-          {/* Quantity and Target row configurations */}
+          {/* Quantity configurations */}
           {currentItem.item_code && (
-            <div className="grid grid-cols-3 gap-2 bg-background p-2 rounded border border-dashed text-xs items-center animate-fadeIn">
+            <div className="grid grid-cols-3 gap-2 bg-background p-2 rounded border border-dashed text-xs items-center transition-all animate-in fade-in duration-200">
               <div className="col-span-2">
                 <span className="text-[10px] text-muted-foreground block font-mono">
-                  Matched SKU: {currentItem.item_code}
+                  {currentItem.item_code}
                 </span>
                 <span className="font-medium truncate block text-slate-800">
                   {currentItem.item_description}
@@ -528,7 +553,10 @@ export default function CreateBadOrderPage() {
                   onChange={(e) =>
                     setCurrentItem((p) => ({
                       ...p,
-                      request_qty: parseInt(e.target.value, 10) || 1,
+                      request_qty: Math.max(
+                        1,
+                        parseInt(e.target.value, 10) || 1,
+                      ),
                     }))
                   }
                   className="h-8 text-center font-bold"
@@ -545,14 +573,14 @@ export default function CreateBadOrderPage() {
             disabled={!currentItem.item_code}
             onClick={addSKURow}
           >
-            Append SKU Row to Manifest
+            Append Product
           </Button>
 
-          {/* Current Local Localized Memory Tables */}
+          {/* Table Memory Ledger */}
           {manifestItems.length > 0 && (
             <div className="border rounded-md bg-background max-h-40 overflow-y-auto">
               <Table>
-                <TableHeader className="bg-slate-50">
+                <TableHeader className="bg-slate-50 sticky top-0 z-10">
                   <TableRow>
                     <TableHead className="p-2 text-xs">SKU</TableHead>
                     <TableHead className="p-2 text-xs">Description</TableHead>
@@ -565,16 +593,16 @@ export default function CreateBadOrderPage() {
                 <TableBody>
                   {manifestItems.map((item, idx) => (
                     <TableRow key={idx} className="text-xs">
-                      <td className="p-2 font-mono font-medium">
+                      <TableCell className="p-2 font-mono font-medium">
                         {item.item_code}
-                      </td>
-                      <td className="p-2 truncate max-w-[200px] text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="p-2 truncate max-w-[200px] text-muted-foreground">
                         {item.item_description}
-                      </td>
-                      <td className="p-2 text-center font-bold text-primary">
+                      </TableCell>
+                      <TableCell className="p-2 text-center font-bold text-primary">
                         {item.request_qty} {item.uom}
-                      </td>
-                      <td className="p-2 text-center">
+                      </TableCell>
+                      <TableCell className="p-2 text-center">
                         <button
                           type="button"
                           onClick={() =>
@@ -586,7 +614,7 @@ export default function CreateBadOrderPage() {
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
-                      </td>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -661,7 +689,7 @@ export default function CreateBadOrderPage() {
           </Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{" "}
-            File Form Manifest
+            Request Bad Order
           </Button>
         </div>
       </form>

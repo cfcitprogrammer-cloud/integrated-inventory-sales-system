@@ -14,6 +14,8 @@ import {
   ChevronsUpDown,
   Layers,
   ClipboardList,
+  CloudCheck,
+  Calendar,
 } from "lucide-react";
 
 // shadcn/ui components
@@ -84,10 +86,12 @@ interface ProductVariant {
 interface InventoryLineItem {
   item_code: string;
   item_description: string;
-  item_alias: string;
+  item_alias?: string;
   item_uom: string;
   qty: number;
-  reorder_level: number;
+  reorder_level?: number;
+  expiration_date?: string;
+  isCommitted: boolean;
 }
 
 export default function SalesInventoryPage() {
@@ -116,13 +120,17 @@ export default function SalesInventoryPage() {
   // Local Form Input States
   const [qty, setQty] = useState<number>(0);
   const [reorderLevel, setReorderLevel] = useState<number>(0);
+  const [expirationDate, setExpirationDate] = useState<string>("");
+
+  // Unified Memory Grid (Holds both committed rows and layout staged entries)
   const [inventoryLines, setInventoryLines] = useState<InventoryLineItem[]>([]);
 
-  // UI Visibility States
+  // UI Visibility & Async Loaders
   const [isOutletComboOpen, setIsOutletComboOpen] = useState(false);
   const [isItemComboOpen, setIsItemComboOpen] = useState(false);
   const [isSearchingOutlets, setIsSearchingOutlets] = useState(false);
   const [isSearchingItems, setIsSearchingItems] = useState(false);
+  const [isSyncingServerLines, setIsSyncingServerLines] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- EFFECT 1: DEBOUNCED OUTLET (BPMD) SEARCH ---
@@ -130,7 +138,6 @@ export default function SalesInventoryPage() {
     async function fetchOutlets() {
       const query = debouncedOutletSearch.trim();
 
-      // Stop execution if search criteria is too short
       if (query.length < 2) {
         setOutlets([]);
         return;
@@ -161,7 +168,6 @@ export default function SalesInventoryPage() {
     async function fetchItems() {
       const query = debouncedItemSearch.trim();
 
-      // Stop execution if search criteria is too short
       if (query.length < 2) {
         setVariants([]);
         return;
@@ -212,6 +218,68 @@ export default function SalesInventoryPage() {
     fetchItems();
   }, [debouncedItemSearch, extDbClient]);
 
+  // --- EFFECT 3: FETCH AND SYNC COMMITTED LEDGERS TO UNIFIED TABLE ---
+  const fetchAndSyncCommittedItems = async (code: string) => {
+    if (!code) {
+      setInventoryLines([]);
+      return;
+    }
+
+    setIsSyncingServerLines(true);
+    try {
+      // Find headers linked to customer/outlet code
+      const { data: headers, error: headerError } = await mainDbClient
+        .from("tbl_inventory")
+        .select("id")
+        .eq("bp_code", code);
+
+      if (headerError) throw headerError;
+
+      if (!headers || headers.length === 0) {
+        setInventoryLines([]);
+        return;
+      }
+
+      const headerIds = headers.map((h) => h.id);
+
+      // Fetch matching historical items
+      const { data: dbItems, error: itemsError } = await mainDbClient
+        .from("tbl_inventory_items")
+        .select(
+          "item_code, item_description, qty, uom, reorder_level, expiration_date",
+        )
+        .in("inventory_id", headerIds);
+
+      if (itemsError) throw itemsError;
+
+      // Map DB entries to shared structure with isCommitted locked to true
+      const syncedCommittedLines: InventoryLineItem[] = (dbItems || []).map(
+        (db) => ({
+          item_code: db.item_code,
+          item_description: db.item_description,
+          item_uom: db.uom || "",
+          qty: db.qty,
+          reorder_level: db.reorder_level || 0,
+          expiration_date: db.expiration_date || undefined,
+          isCommitted: true,
+        }),
+      );
+
+      setInventoryLines(syncedCommittedLines);
+    } catch (err) {
+      console.error("Historical Manifest Synchronization Error:", err);
+      toast.error(
+        "Failed to sync structural balance data with database entries.",
+      );
+    } finally {
+      setIsSyncingServerLines(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAndSyncCommittedItems(outletCode);
+  }, [outletCode]);
+
   // --- MANIFEST GRID OPERATIONS ---
   const handleAddLineItem = () => {
     if (!selectedVariant) {
@@ -223,35 +291,64 @@ export default function SalesInventoryPage() {
       return;
     }
 
+    // Fixed Check: Verify match using combination of SKU AND Expiration Date state parameters
     const isDuplicate = inventoryLines.some(
-      (line) => line.item_code === selectedVariant.sku,
+      (line) =>
+        line.item_code === selectedVariant.sku &&
+        (line.expiration_date || "") === (expirationDate || ""),
     );
+
     if (isDuplicate) {
-      toast.error("This SKU is already added to the list below.");
+      toast.error(
+        "This batch instance (same SKU and Expiration Date) already exists in the manifest compilation ledger.",
+      );
       return;
     }
 
     const newLine: InventoryLineItem = {
       item_code: selectedVariant.sku,
-      item_description: `${selectedVariant.product_name}`,
+      item_description: `${selectedVariant.product_name} ${selectedVariant.alias}`,
       item_uom: selectedVariant.uom,
       item_alias: selectedVariant.alias,
       qty,
       reorder_level: reorderLevel,
+      expiration_date: expirationDate || undefined,
+      isCommitted: false,
     };
 
     setInventoryLines([...inventoryLines, newLine]);
 
-    // Clear out intermediate states
     setSelectedVariant(null);
     setItemInput("");
     setQty(0);
     setReorderLevel(0);
-    toast.success("Item queued to manifest.");
+    setExpirationDate("");
+    toast.success("Item queued to current workspace manifest.");
   };
 
-  const handleRemoveLineItem = (sku: string) => {
-    setInventoryLines(inventoryLines.filter((line) => line.item_code !== sku));
+  const handleRemoveLineItem = (sku: string, expDate?: string) => {
+    const targetLine = inventoryLines.find(
+      (line) =>
+        line.item_code === sku &&
+        (line.expiration_date || "") === (expDate || ""),
+    );
+
+    if (targetLine?.isCommitted) {
+      toast.error(
+        "Committed historical data rows cannot be dropped from client layer.",
+      );
+      return;
+    }
+
+    setInventoryLines(
+      inventoryLines.filter(
+        (line) =>
+          !(
+            line.item_code === sku &&
+            (line.expiration_date || "") === (expDate || "")
+          ),
+      ),
+    );
   };
 
   // --- SAVE OPERATION TO THE DATABASE ---
@@ -261,8 +358,15 @@ export default function SalesInventoryPage() {
       return;
     }
 
-    if (inventoryLines.length === 0) {
-      toast.error("Cannot commit an empty inventory manifest.");
+    // Isolate only structural rows that have false statuses
+    const uncommittedStagedLines = inventoryLines.filter(
+      (line) => !line.isCommitted,
+    );
+
+    if (uncommittedStagedLines.length === 0) {
+      toast.error(
+        "No newly updated workspace items are currently queued for tracking submission.",
+      );
       return;
     }
 
@@ -270,8 +374,6 @@ export default function SalesInventoryPage() {
 
     try {
       const activeCompanyId = localStorage.getItem("active_company_id");
-
-      // Get authenticated session
       const {
         data: { session },
         error: sessionError,
@@ -280,10 +382,7 @@ export default function SalesInventoryPage() {
       if (sessionError) throw sessionError;
 
       const userId = session?.user?.id;
-
-      if (!userId) {
-        throw new Error("No authenticated user found.");
-      }
+      if (!userId) throw new Error("No authenticated user found.");
 
       // 1. Insert inventory header
       const { data: inventoryData, error: inventoryError } = await mainDbClient
@@ -292,47 +391,51 @@ export default function SalesInventoryPage() {
           bp_code: outletCode,
           outlet_name: outletName,
           company_id: activeCompanyId,
-          user_id: userId, // <-- added here
+          user_id: userId,
         })
         .select()
         .single();
 
       if (inventoryError) throw inventoryError;
 
-      // Generated inventory ID
       const inventoryId = inventoryData.id;
 
-      // 2. Prepare inventory items
-      const itemPayload = inventoryLines.map((line) => ({
+      // 2. Map payload items, allowing null values for entries lacking dates
+      const itemPayload = uncommittedStagedLines.map((line) => ({
         inventory_id: inventoryId,
-
         item_code: line.item_code,
         item_description: line.item_description,
         qty: line.qty,
         uom: line.item_uom,
         reorder_level: line.reorder_level,
+        expiration_date: line.expiration_date || null,
       }));
 
-      // 3. Insert items
+      // 3. Fire structural write query
       const { error: itemsError } = await mainDbClient
         .from("tbl_inventory_items")
         .insert(itemPayload);
 
       if (itemsError) throw itemsError;
 
-      toast.success("Inventory successfully saved.");
+      toast.success(
+        "New operational items successfully synced and locked to DB database layer.",
+      );
 
-      // Reset form
-      setInventoryLines([]);
-      setOutletCode("");
-      setOutletName("");
-      setOutletInput("");
+      // Refresh data pool to make sure newly committed elements switch isCommitted to true
+      await fetchAndSyncCommittedItems(outletCode);
     } catch (err: any) {
-      toast.error(err.message || "Failed to commit inventory data.");
+      toast.error(
+        err.message || "Failed to commit staging matrix data clusters.",
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // Separate records array values dynamically for cleaner validation feedback metrics
+  const totalStagedCount = inventoryLines.filter((l) => !l.isCommitted).length;
+
   return (
     <div className="space-y-6 w-full p-1 max-w-6xl mx-auto">
       <div className="flex flex-col gap-1.5">
@@ -483,7 +586,7 @@ export default function SalesInventoryPage() {
                       role="combobox"
                       aria-expanded={isItemComboOpen}
                       className="w-full justify-between font-normal text-left truncate"
-                      disabled={!outletCode}
+                      disabled={!outletCode || isSyncingServerLines}
                     >
                       {selectedVariant
                         ? `${selectedVariant.product_name} (${selectedVariant.variant_name})`
@@ -584,6 +687,18 @@ export default function SalesInventoryPage() {
                     disabled={!selectedVariant}
                   />
                 </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="expiration_date">Expiration Date</Label>
+                  <Input
+                    id="expiration_date"
+                    type="date"
+                    value={expirationDate}
+                    onChange={(e) => setExpirationDate(e.target.value)}
+                    disabled={!selectedVariant}
+                    className="text-xs"
+                  />
+                </div>
               </div>
 
               <Button
@@ -598,7 +713,7 @@ export default function SalesInventoryPage() {
           </Card>
         </div>
 
-        {/* LEDGER DISPLAY PANEL */}
+        {/* LEDGER MANIFEST MONITOR */}
         <div className="md:col-span-2 space-y-4">
           <Card className="h-full flex flex-col shadow-sm">
             <CardHeader className="pb-3 border-b bg-muted/30">
@@ -609,13 +724,13 @@ export default function SalesInventoryPage() {
                     Current Manifest Compilation View
                   </CardTitle>
                   <CardDescription>
-                    Staged items awaiting database confirmation
+                    Reviewing current workspace ledger context mappings.
                   </CardDescription>
                 </div>
                 {outletCode && (
                   <div className="text-right flex flex-col items-end">
                     <span className="text-xs font-bold text-indigo-600 uppercase tracking-tight font-mono">
-                      Staging Target
+                      Active Customer Context
                     </span>
                     <span className="text-sm font-semibold text-foreground max-w-[200px] truncate">
                       {outletName}
@@ -628,55 +743,128 @@ export default function SalesInventoryPage() {
               <Table>
                 <TableHeader className="bg-muted/40">
                   <TableRow>
-                    <TableHead className="font-semibold text-foreground">
+                    <TableHead className="font-semibold text-foreground text-xs w-[130px]">
                       SKU / Item Hash Code
                     </TableHead>
-                    <TableHead className="font-semibold text-foreground">
-                      Category Tree & System Description
+                    <TableHead className="font-semibold text-foreground text-xs">
+                      System Description & Status Tree
                     </TableHead>
-                    <TableHead className="w-[100px] text-center font-semibold text-foreground">
+                    <TableHead className="w-[70px] text-center font-semibold text-foreground text-xs">
                       Quantity
                     </TableHead>
-                    <TableHead className="w-[60px] text-right"></TableHead>
+                    <TableHead className="w-[110px] text-center font-semibold text-foreground text-xs">
+                      Expiration
+                    </TableHead>
+                    <TableHead className="w-[90px] text-right font-semibold text-foreground text-xs">
+                      Action Block
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {inventoryLines.length === 0 ? (
+                  {isSyncingServerLines ? (
                     <TableRow>
                       <TableCell
                         colSpan={5}
-                        className="h-64 text-center text-sm text-muted-foreground"
+                        className="h-64 text-center text-sm text-muted-foreground font-medium"
                       >
-                        Your manifest ledger stack is currently empty. Define an
-                        outlet context and use the item controls panel sidebar
-                        on the left to add items.
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                          Synchronizing with historical remote records...
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : inventoryLines.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="h-64 text-center text-xs text-muted-foreground italic"
+                      >
+                        No lines found. Select an outlet context to populate
+                        active database stock data, or append new entries using
+                        the input engine on the left.
                       </TableCell>
                     </TableRow>
                   ) : (
                     inventoryLines.map((line) => (
                       <TableRow
-                        key={line.item_code}
-                        className="hover:bg-accent/30"
+                        key={`${line.item_code}-${line.expiration_date || "no-exp"}`}
+                        className={cn(
+                          "transition-colors",
+                          line.isCommitted
+                            ? "bg-muted/30 border-dashed hover:bg-muted/40"
+                            : "hover:bg-accent/40",
+                        )}
                       >
-                        <TableCell className="font-mono text-xs font-semibold tracking-tight text-foreground">
+                        <TableCell className="font-mono text-xs font-medium text-foreground tracking-tight">
                           {line.item_code}
                         </TableCell>
-                        <TableCell className="text-x font-medium">
-                          <p>{line.item_description}</p>
-                          <p className="font-mono text-xs">{line.item_alias}</p>
+                        <TableCell className="text-xs">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-medium text-foreground">
+                              {line.item_description}
+                            </span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[10px] px-1.5 py-0.2 bg-background border rounded font-mono text-muted-foreground uppercase">
+                                {line.item_uom}
+                              </span>
+                              {line.isCommitted ? (
+                                <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5 bg-emerald-50 px-1.5 rounded-sm border border-emerald-200">
+                                  <CloudCheck className="h-3 w-3" /> Committed
+                                  to Remote Server
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 rounded-sm border border-amber-200">
+                                  ● Staged Workspace Line Item
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </TableCell>
-                        <TableCell className="text-center font-bold text-sm text-foreground">
+                        <TableCell
+                          className={cn(
+                            "text-center font-bold text-sm",
+                            line.isCommitted
+                              ? "text-indigo-600/80"
+                              : "text-foreground",
+                          )}
+                        >
                           {line.qty}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveLineItem(line.item_code)}
-                            className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+
+                        <TableCell className="text-center text-xs">
+                          {line.expiration_date ? (
+                            <span className="font-mono bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 px-2 py-0.5 rounded border text-[11px] inline-flex items-center gap-1">
+                              <Calendar className="h-3 w-3 text-neutral-500" />
+                              {line.expiration_date}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground italic text-[11px]">
+                              --
+                            </span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-right pr-4">
+                          {line.isCommitted ? (
+                            <span className="text-[10px] font-mono font-bold text-muted-foreground select-none bg-muted px-2 py-1 rounded border border-neutral-300">
+                              Locked
+                            </span>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                handleRemoveLineItem(
+                                  line.item_code,
+                                  line.expiration_date,
+                                )
+                              }
+                              className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              title="Delete local staging entry"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))
@@ -684,30 +872,44 @@ export default function SalesInventoryPage() {
                 </TableBody>
               </Table>
 
-              <div className="p-4 border-t bg-muted/10 flex items-center justify-end gap-3 mt-auto">
-                <Button
-                  variant="outline"
-                  onClick={() => setInventoryLines([])}
-                  disabled={inventoryLines.length === 0 || isSubmitting}
-                >
-                  Clear Manifest Grid
-                </Button>
-                <Button
-                  onClick={handleSubmitInventory}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[160px]"
-                  disabled={
-                    inventoryLines.length === 0 || isSubmitting || !outletCode
-                  }
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
-                      Committing...
-                    </>
-                  ) : (
-                    "Commit Staged Entries"
+              <div className="p-4 border-t bg-muted/10 flex items-center justify-between gap-3 mt-auto">
+                <div className="text-xs text-muted-foreground font-mono">
+                  {totalStagedCount > 0 && (
+                    <span>
+                      Ready to Commit:{" "}
+                      <strong className="text-amber-600">
+                        {totalStagedCount} items
+                      </strong>
+                    </span>
                   )}
-                </Button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setInventoryLines(
+                        inventoryLines.filter((l) => l.isCommitted),
+                      )
+                    }
+                    disabled={totalStagedCount === 0 || isSubmitting}
+                  >
+                    Clear Staged Changes
+                  </Button>
+                  <Button
+                    onClick={handleSubmitInventory}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[180px]"
+                    disabled={totalStagedCount === 0 || isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Processing
+                        Write...
+                      </span>
+                    ) : (
+                      "Commit Manifest Ledger"
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

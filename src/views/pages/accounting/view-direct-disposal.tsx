@@ -29,16 +29,18 @@ export default function AccountingViewDirectDisposalsPage() {
   const [ticket, setTicket] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
+  const [workflowState, setWorkflowState] = useState<any>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
-  // Checks if the ticket has reached a final state in its workflow lifecycle
+  // 🔒 Disables actions if master ticket status is terminal OR if accounting has already approved
   const isTerminated =
     ticket?.status === "Approved" ||
     ticket?.status === "Rejected" ||
-    ticket?.status === "Closed";
+    ticket?.status === "Closed" ||
+    workflowState?.dd_acc_status === "APPROVED";
 
   // Core Direct Disposal Fetch Engine
   async function fetchDetailedData() {
@@ -58,20 +60,29 @@ export default function AccountingViewDirectDisposalsPage() {
         .eq("id", id)
         .single();
 
-      // 📦 Fetching the SKU list bound to this ticket
+      // Fetch items manifest
       const itemsRes = await supabase()
         .from("tbl_bo_input_items")
         .select("*")
         .eq("bo_input_id", id);
 
+      // Fetch accompanying attachments
       const attachRes = await supabase()
         .from("tbl_bo_attachments")
         .select("*")
         .eq("bo_input_id", id);
 
+      // Fetch direct workflow row to track accounting execution state
+      const workflowRes = await supabase()
+        .from("tbl_bo_workflow")
+        .select("dd_acc_status")
+        .eq("bo_input_id", id)
+        .maybeSingle();
+
       setTicket(ticketRes.data);
       setItems(itemsRes.data || []);
       setAttachments(attachRes.data || []);
+      setWorkflowState(workflowRes.data);
     } catch (err) {
       console.error(
         "Failed loading direct disposal approval manifest hooks:",
@@ -92,7 +103,6 @@ export default function AccountingViewDirectDisposalsPage() {
       setIsSubmitting(true);
       const timestampIso = new Date().toISOString();
 
-      // 2. Sync corresponding updates into the audit timeline/workflow metrics table
       const workflowPayload = {
         dd_acc_status: decision.toUpperCase(),
         dd_acc_updated_at: timestampIso,
@@ -105,7 +115,7 @@ export default function AccountingViewDirectDisposalsPage() {
 
       if (workflowError) throw workflowError;
 
-      // 3. Hot-reload interface tracking contexts
+      // Hot-reload context flags to evaluate updated state locks immediately
       await fetchDetailedData();
       setRefreshNonce((prev) => prev + 1);
 
@@ -226,9 +236,9 @@ export default function AccountingViewDirectDisposalsPage() {
               </span>
               <span
                 className={`text-xs font-bold px-2 py-0.5 rounded inline-block mt-0.5 ${
-                  ticket.status === "Approved"
+                  ticket.status === "Open"
                     ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : ticket.status === "Rejected"
+                    : ticket.status === "Closed"
                       ? "bg-red-50 text-red-700 border border-red-200"
                       : "bg-yellow-50 text-yellow-700 border border-yellow-200"
                 }`}
@@ -247,7 +257,7 @@ export default function AccountingViewDirectDisposalsPage() {
             </div>
           </div>
 
-          {/* 📦 SKU / Disposal Items Manifest (Clean Read-Only View) */}
+          {/* 📦 SKU / Disposal Items Manifest */}
           <div className="space-y-2">
             <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase flex items-center gap-1">
               <Package className="h-3.5 w-3.5 text-slate-500" /> Disposal Item

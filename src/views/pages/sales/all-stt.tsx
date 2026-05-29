@@ -15,20 +15,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Plus,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  Edit2,
-  Eye,
-} from "lucide-react";
+import { Plus, Search, Eye, FileSpreadsheet } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { supabaseClients } from "@/config/db";
 
-// Defines the individual items inside an stt entry
 type TblSTTItemDetails = {
   id: number;
   item_code?: string;
@@ -43,10 +35,9 @@ type TblSTT = {
   outlet_name: string;
   bp_code: string;
   sku_count: number;
-  items: TblSTTItemDetails[]; // Holds the child records
+  items: TblSTTItemDetails[];
 };
 
-// Raw layout typing for Supabase's returns
 type SupabaseSTTItem = {
   id: number;
   created_at: string;
@@ -56,13 +47,17 @@ type SupabaseSTTItem = {
 };
 
 export default function SalesAllSTTPage() {
+  // 💡 URL-Driven Routing Architecture
+  const { page } = useParams<{ page: string }>();
   const navigate = useNavigate();
+
+  // Safeguard: Fallback to page 1 if URL param is missing or corrupted
+  const urlPage = page && !isNaN(Number(page)) ? Number(page) : 1;
+
   const [STT, setSTT] = useState<TblSTT[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // Search and Pagination state
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
+
   const itemsPerPage = 10;
 
   // View SKU Modal state
@@ -92,7 +87,6 @@ export default function SalesAllSTTPage() {
         return;
       }
 
-      // Updated query: Fetch complete fields from tbl_STT_items
       const { data, error } = await mainDbClient
         .from("tbl_stt")
         .select(
@@ -130,7 +124,7 @@ export default function SalesAllSTTPage() {
             outlet_name: item.outlet_name,
             bp_code: item.bp_code,
             sku_count: itemsList.length,
-            items: itemsList, // Injected into component state
+            items: itemsList,
           };
         }) || [];
 
@@ -142,7 +136,12 @@ export default function SalesAllSTTPage() {
     }
   }
 
-  // --- Search & Pagination Logic ---
+  // Pure Pagination Engine routing coordinator
+  const handlePageChange = (newPage: number) => {
+    navigate(`/d/sales/stt/${newPage}`);
+  };
+
+  // --- Search & Pagination Computations ---
   const filteredSTT = STT.filter((item) => {
     const query = searchQuery.toLowerCase();
     return (
@@ -151,92 +150,126 @@ export default function SalesAllSTTPage() {
     );
   });
 
-  const totalPages = Math.ceil(filteredSTT.length / itemsPerPage);
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredSTT.slice(indexOfFirstItem, indexOfLastItem);
-
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(e.target.value);
-    setCurrentPage(1);
-  };
+  const totalPages = Math.ceil(filteredSTT.length / itemsPerPage) || 1;
+  const indexOfFirstItem = (urlPage - 1) * itemsPerPage;
+  const currentItems = filteredSTT.slice(
+    indexOfFirstItem,
+    indexOfFirstItem + itemsPerPage,
+  );
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold">My STT</h1>
-        <p className="text-xs text-muted-foreground">
-          View and manage submitted STT.
-        </p>
-      </header>
-
-      <div className="flex justify-between items-center gap-4">
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Filter accounts or bp code..."
-            className="pl-9"
-            value={searchQuery}
-            onChange={handleSearchChange}
-          />
+    <section className="p-6 space-y-6">
+      {/* Responsive Header Block */}
+      <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight">
+            My Sales to Trade
+          </h1>
+          <p className="text-xs text-muted-foreground">
+            View, track, and manage submitted sales to trade documents.
+          </p>
         </div>
 
-        <Link to={"/d/sales/add-STT"}>
-          <Button>
-            <Plus className="mr-1 h-4 w-4" /> Add STT
+        <div className="w-full lg:w-72 relative">
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search by outlet or BP code..."
+            className="pl-9 text-xs"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              // 💡 Explicit Interaction: Hard reset routing pipeline to page 1 upon manual keystroke
+              if (urlPage !== 1) {
+                handlePageChange(1);
+              }
+            }}
+          />
+        </div>
+      </header>
+
+      {/* Action Subheader Control Segment */}
+      <div className="flex items-center gap-2 border-b pb-3">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border bg-zinc-950 text-white shadow-sm">
+          All Transfers
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white">
+            {filteredSTT.length}
+          </span>
+        </div>
+
+        <Link to={"/d/sales/add-STT"} className="ml-auto">
+          <Button size="sm" className="h-8 gap-1 text-xs">
+            <Plus className="h-3.5 w-3.5" /> Add STT Record
           </Button>
         </Link>
       </div>
 
-      <div className="rounded-md border">
+      {/* Consolidated Main Table Container Card */}
+      <div className="rounded-md border bg-white shadow-sm">
         <Table className="text-xs">
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[120px]">Request ID</TableHead>
               <TableHead>Date Filed</TableHead>
-              <TableHead>BP Code</TableHead>
-              <TableHead>Outlet Name</TableHead>
-              <TableHead>SKU's Count</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>Account Details</TableHead>
+              <TableHead className="w-[140px] text-center">Volume</TableHead>
+              <TableHead className="w-[120px] text-center">Action</TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-6">
-                  Loading...
+                <TableCell
+                  colSpan={4}
+                  className="h-24 text-center text-sm text-muted-foreground"
+                >
+                  Querying database routing pipelines...
                 </TableCell>
               </TableRow>
             ) : currentItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-6">
-                  No STT found.
+                <TableCell
+                  colSpan={4}
+                  className="h-24 text-center text-sm text-muted-foreground"
+                >
+                  No active transfer records matching specified parameters.
                 </TableCell>
               </TableRow>
             ) : (
-              currentItems.map((STT) => (
-                <TableRow key={STT.id}>
-                  <TableCell>{STT.created_at}</TableCell>
-                  <TableCell>{STT.bp_code}</TableCell>
-                  <TableCell>{STT.outlet_name}</TableCell>
-                  <TableCell>{STT.sku_count}</TableCell>
-                  <TableCell className="text-right space-x-2">
+              currentItems.map((sttItem) => (
+                <TableRow key={sttItem.id}>
+                  <TableCell className="font-medium text-zinc-900">
+                    #{sttItem.id}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground font-medium">
+                    {sttItem.created_at}
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium text-zinc-900">
+                      {sttItem.outlet_name}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground tracking-wide font-mono mt-0.5">
+                      {sttItem.bp_code}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-800 border border-zinc-200">
+                      <FileSpreadsheet className="h-3 w-3 text-zinc-500" />
+                      {sttItem.sku_count}{" "}
+                      {sttItem.sku_count === 1 ? "Item" : "Items"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-center">
                     <Button
                       size={"xs"}
-                      variant="outline"
+                      variant={"outline"}
+                      className="h-7 text-xs"
                       onClick={() => {
-                        setSelectedSTT(STT);
+                        setSelectedSTT(sttItem);
                         setIsSkuModalOpen(true);
                       }}
                     >
-                      <Eye className="mr-1 h-3 w-3" /> View SKU's
-                    </Button>
-                    <Button
-                      size={"xs"}
-                      variant="secondary"
-                      onClick={() => navigate(`/d/sales/edit-STT/${STT.id}`)}
-                    >
-                      <Edit2 className="mr-1 h-3 w-3" /> Edit
+                      <Eye className="h-3 w-3 mr-1" /> Review
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -244,87 +277,98 @@ export default function SalesAllSTTPage() {
             )}
           </TableBody>
         </Table>
+
+        {/* 💡 Cohesive Embedded Footer Navigation Panel */}
+        {!loading && filteredSTT.length > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t bg-zinc-50/70 text-xs text-muted-foreground rounded-b-md">
+            <div>
+              Showing {indexOfFirstItem + 1} to{" "}
+              {Math.min(indexOfFirstItem + itemsPerPage, filteredSTT.length)} of{" "}
+              {filteredSTT.length} records
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => handlePageChange(Math.max(urlPage - 1, 1))}
+                disabled={urlPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="font-medium text-zinc-700 px-1">
+                Page {urlPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() =>
+                  handlePageChange(Math.min(urlPage + 1, totalPages))
+                }
+                disabled={urlPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* --- Pagination Controls --- */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between py-2 text-xs">
-          <p className="text-muted-foreground">
-            Showing {indexOfFirstItem + 1} to{" "}
-            {Math.min(indexOfLastItem, filteredSTT.length)} of{" "}
-            {filteredSTT.length} entries
-          </p>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="font-medium">
-              Page {currentPage} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-              }
-              disabled={currentPage === totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* --- View Itemized SKUs Modal --- */}
+      {/* Itemized SKUs Modal Overlay */}
       <Dialog open={isSkuModalOpen} onOpenChange={setIsSkuModalOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>STT Items</DialogTitle>
-            <DialogDescription>
-              Detailed breakdown for <strong>{selectedSTT?.outlet_name}</strong>{" "}
+        <DialogContent className="sm:max-w-xl gap-4 p-6 bg-white rounded-lg shadow-lg border">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-semibold tracking-tight">
+              STT Transaction Content
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Detailed tracking breakdown for{" "}
+              <span className="font-medium text-zinc-900">
+                {selectedSTT?.outlet_name}
+              </span>{" "}
               ({selectedSTT?.bp_code})
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[60vh] overflow-y-auto my-2 rounded-md border">
+          <div className="max-h-[50vh] overflow-y-auto rounded-md border shadow-sm">
             <Table className="text-xs">
-              <TableHeader className="bg-muted/50 sticky top-0 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]">
+              <TableHeader className="bg-zinc-50/70 sticky top-0 border-b backdrop-blur-sm z-10">
                 <TableRow>
-                  <TableHead>SKU Code</TableHead>
-                  <TableHead>Item Name</TableHead>
-                  <TableHead>UOM</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="w-[110px]">SKU Code</TableHead>
+                  <TableHead>Item Description</TableHead>
+                  <TableHead className="w-[70px] text-center">UOM</TableHead>
+                  <TableHead className="w-[80px] text-right">
+                    Quantity
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {!selectedSTT || selectedSTT.items.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={3}
-                      className="text-center py-4 text-muted-foreground"
+                      colSpan={4}
+                      className="h-20 text-center text-muted-foreground"
                     >
-                      No matching items found in this transaction.
+                      No matching items discovered inside this ledger transfer.
                     </TableCell>
                   </TableRow>
                 ) : (
                   selectedSTT.items.map((subItem) => (
-                    <TableRow key={subItem.id}>
-                      <TableCell className="font-mono">
+                    <TableRow
+                      key={subItem.id}
+                      className="hover:bg-zinc-50/50 transition-colors"
+                    >
+                      <TableCell className="font-mono text-[11px] text-zinc-500 font-medium">
                         {subItem.item_code || "—"}
                       </TableCell>
-                      <TableCell className="font-medium">
-                        {subItem.item_description || `Item #${subItem.id}`}
+                      <TableCell className="font-medium text-zinc-900">
+                        {subItem.item_description ||
+                          `Unregistered SKU #${subItem.id}`}
                       </TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="text-center text-zinc-600 font-medium">
                         {subItem.uom ?? "—"}
                       </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {subItem.qty ?? "—"}
+                      <TableCell className="text-right font-semibold text-zinc-900">
+                        {subItem.qty?.toLocaleString() ?? "0"}
                       </TableCell>
                     </TableRow>
                   ))
@@ -333,12 +377,22 @@ export default function SalesAllSTTPage() {
             </Table>
           </div>
 
-          <div className="flex justify-between items-center text-xs text-muted-foreground pt-2">
-            <span>Total Distinct SKUs: {selectedSTT?.sku_count}</span>
-            <Button size="sm" onClick={() => setIsSkuModalOpen(false)}>
-              Close
+          <footer className="flex items-center justify-between pt-2 border-t text-xs">
+            <div className="text-muted-foreground font-medium">
+              Total Manifest Content:{" "}
+              <span className="text-zinc-900 font-semibold">
+                {selectedSTT?.sku_count} Distinct Line Items
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs px-4"
+              onClick={() => setIsSkuModalOpen(false)}
+            >
+              Close View
             </Button>
-          </div>
+          </footer>
         </DialogContent>
       </Dialog>
     </section>

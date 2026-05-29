@@ -28,6 +28,7 @@ import {
 import { NavSales } from "./nav-sales";
 import { NavLogistics } from "./nav-logistics";
 import { NavAccounting } from "./nav-accounting";
+import { NavAudit } from "./nav.audit";
 
 interface CompanyTeam {
   name: string;
@@ -201,6 +202,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     },
   ];
 
+  const auditItems = [
+    {
+      title: "Inventory Validation",
+      url: "#",
+      icon: Frame,
+      items: [
+        { title: "All Inventory Entry", url: "/d/admin/employees" },
+        { title: "Validate Inventory", url: "/d/admin/approvals" },
+      ],
+    },
+    {
+      title: "Reports",
+      url: "#",
+      icon: PieChart,
+      items: [{ title: "All Companies", url: "/d/admin/companies" }],
+    },
+  ];
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -231,6 +250,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
             {(userRole === "admin" || userRole === "logistics") && (
               <NavLogistics items={logisticsItems} />
+            )}
+
+            {(userRole === "admin" || userRole === "audit") && (
+              <NavAudit items={auditItems} />
             )}
           </>
         )}

@@ -1,10 +1,4 @@
-// pages/bad-orders/BadOrdersListPage.tsx
-import React, { useEffect, useState, useCallback } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import { Search, Plus, Eye, XCircle, Loader2, AlertCircle } from "lucide-react";
-import { supabase } from "@/config/db";
-
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -13,308 +7,375 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { useState, useEffect } from "react";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { supabase } from "@/config/db";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Eye, Plus } from "lucide-react";
 
-export interface BOInput {
-  id: string;
+type BadOrderType = {
+  id: number;
   created_at: string;
-  user_id: string;
-  company_id: string;
   outlet_name: string;
   bp_code: string;
-  workflow_type: "For Disposal" | "Return to Warehouse";
-  status: "Pending" | "Approved" | "Rejected";
-  current_step:
-    | "Sales Input"
-    | "Logistics Counting"
-    | "Accounting Verification"
-    | "AGM Approval"
-    | "Completed";
-  remarks: string | null;
-}
+  status: string;
+  tbl_employees?: {
+    first_name: string;
+    last_name: string;
+  } | null;
+  workflow_type: string;
+};
 
 export default function BadOrdersListPage() {
+  const { page } = useParams<{ page: string }>();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
 
-  const searchQuery = searchParams.get("search") || "";
-  const currentPage = parseInt(searchParams.get("page") || "1", 10);
+  // Safeguard: Fallback to page 1 if URL param is garbage or empty
+  const urlPage = page && !isNaN(Number(page)) ? Number(page) : 1;
 
-  const [currentCompanyId, setCurrentCompanyId] = useState<string | null>(() =>
-    localStorage.getItem("active_workspace_company_id"),
-  );
+  const [BadOrders, setBadOrders] = useState<BadOrderType[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [debouncedQuery, setDebouncedQuery] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const [tickets, setTickets] = useState<BOInput[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [cancelTarget, setCancelTarget] = useState<BOInput | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [counts, setCounts] = useState({ all: 0, open: 0, closed: 0 });
+  const [totalRecords, setTotalRecords] = useState<number>(0);
+  const itemsPerPage = 10;
 
-  useEffect(() => {
-    const handleWorkspaceChange = () => {
-      setCurrentCompanyId(localStorage.getItem("active_workspace_company_id"));
-    };
-    window.addEventListener("workspaceCompanyChanged", handleWorkspaceChange);
-    return () =>
-      window.removeEventListener(
-        "workspaceCompanyChanged",
-        handleWorkspaceChange,
-      );
-  }, []);
-
-  const fetchTickets = useCallback(async () => {
-    if (!currentCompanyId) {
-      setTickets([]);
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
-    try {
-      const from = (currentPage - 1) * 10;
-      const to = from + 9;
-
-      let query = supabase()
-        .from("tbl_bo_input")
-        .select("*")
-        .eq("company_id", currentCompanyId);
-
-      if (searchQuery) {
-        query = query.or(
-          `outlet_name.ilike.%${searchQuery}%,bp_code.ilike.%${searchQuery}%`,
-        );
-      }
-
-      const { data, error } = await query
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      if (error) throw error;
-      setTickets(data || []);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to load workflow ledger");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentPage, searchQuery, currentCompanyId]);
-
-  useEffect(() => {
-    fetchTickets();
-  }, [fetchTickets]);
-
-  const handleCancelExecution = async () => {
-    if (!cancelTarget) return;
-    setIsSubmitting(true);
-    try {
-      const updatedRemarks =
-        `${cancelTarget.remarks || ""} [Canceled by Sales Agent]`.trim();
-      const { error } = await supabase()
-        .from("tbl_bo_input")
-        .update({
-          status: "Rejected",
-          current_step: "Completed",
-          remarks: updatedRemarks,
-        })
-        .eq("id", cancelTarget.id);
-
-      if (error) throw error;
-      toast.success("Workflow successfully terminated");
-      setCancelTarget(null);
-      fetchTickets();
-    } catch (err) {
-      toast.error("Failed to transition document state");
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handlePageChange = (newPage: number) => {
+    navigate(`/d/sales/bo/${newPage}`);
   };
 
+  // 💡 Pure Debounce Loop: Only sync text tokens. No routing interference allowed here!
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
+
+  // Combined Master Data Sync Engine executing strict Supabase server-side operations
+  useEffect(() => {
+    async function syncServerSideData() {
+      setIsLoading(true);
+      try {
+        const from = (urlPage - 1) * itemsPerPage;
+        const to = from + itemsPerPage - 1;
+        const cleanQuery = debouncedQuery.trim();
+
+        // -----------------------------------------
+        // PIPELINE 1: Fetch Aggregate Badge Metrics
+        // -----------------------------------------
+        let badgeQuery = supabase()
+          .from("tbl_bo_input")
+          .select("status", { head: false });
+
+        if (cleanQuery !== "") {
+          badgeQuery = badgeQuery.or(
+            `outlet_name.ilike.%${cleanQuery}%,bp_code.ilike.%${cleanQuery}%`,
+          );
+        }
+
+        const { data: badgeData } = await badgeQuery;
+
+        if (badgeData) {
+          setCounts({
+            all: badgeData.length,
+            open: badgeData.filter((d) => d.status?.toLowerCase() === "open")
+              .length,
+            closed: badgeData.filter(
+              (d) => d.status?.toLowerCase() === "closed",
+            ).length,
+          });
+        }
+
+        // -----------------------------------------
+        // PIPELINE 2: Fetch Exact Paginated Range Segment
+        // -----------------------------------------
+        let dataQuery = supabase()
+          .from("tbl_bo_input")
+          .select(
+            `
+            id,
+            created_at,
+            outlet_name,
+            bp_code,
+            status,
+            workflow_type,
+            tbl_employees (
+              first_name,
+              last_name
+            )
+          `,
+            { count: "exact" },
+          );
+
+        if (statusFilter !== "All") {
+          dataQuery = dataQuery.eq("status", statusFilter);
+        }
+
+        if (cleanQuery !== "") {
+          dataQuery = dataQuery.or(
+            `outlet_name.ilike.%${cleanQuery}%,bp_code.ilike.%${cleanQuery}%`,
+          );
+        }
+
+        const { data, error, count } = await dataQuery
+          .order("created_at", { ascending: false })
+          .range(from, to);
+
+        if (error) throw error;
+
+        setBadOrders((data as unknown as BadOrderType[]) || []);
+        setTotalRecords(count || 0);
+      } catch (error: any) {
+        console.error(
+          "Critical fault syncing server-side tracking elements:",
+          error.message,
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    syncServerSideData();
+  }, [urlPage, debouncedQuery, statusFilter]);
+
+  const totalPages = Math.ceil(totalRecords / itemsPerPage) || 1;
+  const indexOfFirstItem = (urlPage - 1) * itemsPerPage;
+
   return (
-    <div className="w-full space-y-5 p-6">
-      <div className="border-b pb-4 flex justify-between items-end">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            Bad Orders Ledger
+    <section className="p-6 space-y-6">
+      <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight">
+            Bad Order Requests
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Monitor state transitions across Logistics, Accounting, and the AGM
-            desk.
+          <p className="text-xs text-muted-foreground">
+            View and manage all bad order request documents.
           </p>
         </div>
-        <Button
-          onClick={() => navigate("/d/sales/add-bo")}
-          disabled={!currentCompanyId}
-          className="gap-2"
-        >
-          <Plus className="h-4 w-4" /> Create Return Manifest
-        </Button>
-      </div>
 
-      {!currentCompanyId && (
-        <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-sm flex items-center gap-3">
-          <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />
-          <span>
-            Select an authorized business workspace entity in the sidebar
-            switcher to load records.
-          </span>
-        </div>
-      )}
-
-      <div className="flex justify-between items-center gap-4">
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="w-full lg:w-72">
           <Input
-            placeholder="Search account name or code..."
+            placeholder="Search by outlet or BP code..."
             value={searchQuery}
-            disabled={!currentCompanyId}
-            onChange={(e) =>
-              setSearchParams((p) => {
-                e.target.value
-                  ? p.set("search", e.target.value)
-                  : p.delete("search");
-                p.set("page", "1");
-                return p;
-              })
-            }
-            className="pl-9"
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              // 💡 Explicit Interaction: Reset page ONLY when the human hits a key in the search field
+              if (urlPage !== 1) {
+                handlePageChange(1);
+              }
+            }}
           />
         </div>
+      </header>
+
+      {/* Pill Badge Filters Section */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 planar-scrolls">
+        <button
+          disabled={isLoading}
+          onClick={() => {
+            setStatusFilter("All");
+            handlePageChange(1);
+          }}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all shadow-sm ${
+            statusFilter === "All"
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-white text-muted-foreground hover:bg-zinc-50 border-input"
+          }`}
+        >
+          All
+          <span
+            className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              statusFilter === "All"
+                ? "bg-white/20 text-white"
+                : "bg-zinc-100 text-zinc-600"
+            }`}
+          >
+            {counts.all}
+          </span>
+        </button>
+
+        <button
+          disabled={isLoading}
+          onClick={() => {
+            setStatusFilter("Open");
+            handlePageChange(1);
+          }}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all shadow-sm ${
+            statusFilter === "Open"
+              ? "bg-amber-600 text-white border-amber-600"
+              : "bg-white text-muted-foreground hover:bg-zinc-50 border-input"
+          }`}
+        >
+          Open
+          <span
+            className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              statusFilter === "Open"
+                ? "bg-white/25 text-white"
+                : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            {counts.open}
+          </span>
+        </button>
+
+        <button
+          disabled={isLoading}
+          onClick={() => {
+            setStatusFilter("Closed");
+            handlePageChange(1);
+          }}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all shadow-sm ${
+            statusFilter === "Closed"
+              ? "bg-emerald-600 text-white border-emerald-600"
+              : "bg-white text-muted-foreground hover:bg-zinc-50 border-input"
+          }`}
+        >
+          Closed
+          <span
+            className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              statusFilter === "Closed"
+                ? "bg-white/25 text-white"
+                : "bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            {counts.closed}
+          </span>
+        </button>
+
+        <Link to={`/d/sales/add-bo`} className="ml-auto">
+          <Button>
+            <Plus /> Request Bad Order
+          </Button>
+        </Link>
       </div>
 
-      <div className="rounded-md border bg-card">
-        <Table>
+      {/* Main Datatable view Container */}
+      <div className="rounded-md border bg-white shadow-sm">
+        <Table className="text-xs">
           <TableHeader>
             <TableRow>
-              <TableHead>Filing Date</TableHead>
-              <TableHead>Customer Account</TableHead>
-              <TableHead>Route Type</TableHead>
-              <TableHead>Current Step</TableHead>
+              <TableHead className="w-[100px]">Request ID</TableHead>
+              <TableHead>Date Filed</TableHead>
+              <TableHead>Outlet Name</TableHead>
+              <TableHead>Route</TableHead>
+              <TableHead>Requested By</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-[100px] text-right">Actions</TableHead>
+              <TableHead className="text-center">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
-                  <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />{" "}
-                  Reading system status arrays...
+                <TableCell
+                  colSpan={6}
+                  className="h-24 text-center text-sm text-muted-foreground"
+                >
+                  Querying database routing pipelines...
                 </TableCell>
               </TableRow>
-            ) : tickets.length === 0 ? (
+            ) : BadOrders.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={6}
-                  className="h-24 text-center text-muted-foreground"
+                  className="h-24 text-center text-sm text-muted-foreground"
                 >
-                  No returns found inside this workspace index.
+                  No active return warehouse records matching specified
+                  parameters.
                 </TableCell>
               </TableRow>
             ) : (
-              tickets.map((ticket) => (
-                <TableRow key={ticket.id}>
-                  <TableCell className="text-xs">
-                    {new Date(ticket.created_at).toLocaleDateString()}
+              BadOrders.map((bo) => (
+                <TableRow key={bo.id}>
+                  <TableCell className="font-medium">#{bo.id}</TableCell>
+                  <TableCell>
+                    {bo.created_at
+                      ? new Date(bo.created_at).toLocaleDateString()
+                      : "N/A"}
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium text-sm">
-                      {ticket.outlet_name}
-                    </div>
-                    <div className="text-[11px] font-mono text-muted-foreground">
-                      {ticket.bp_code}
+                    <div className="font-medium">{bo.outlet_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {bo.bp_code}
                     </div>
                   </TableCell>
+
+                  <TableCell>
+                    <div className="font-medium">{bo.workflow_type}</div>
+                  </TableCell>
+
+                  <TableCell>
+                    {bo.tbl_employees
+                      ? `${bo.tbl_employees.first_name} ${bo.tbl_employees.last_name}`
+                      : "Unassigned Employee"}
+                  </TableCell>
+
                   <TableCell>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        ticket.workflow_type === "For Disposal"
-                          ? "bg-orange-100 text-orange-800"
-                          : "bg-blue-100 text-blue-800"
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        bo.status.toLowerCase() === "open"
+                          ? "bg-green-100 text-green-800"
+                          : bo.status.toLowerCase() === "closed"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-yellow-100 text-yellow-800"
                       }`}
                     >
-                      {ticket.workflow_type}
+                      {bo.status}
                     </span>
                   </TableCell>
-                  <TableCell className="text-xs font-medium text-slate-700">
-                    {ticket.current_step}
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`text-xs font-semibold px-2 py-1 rounded ${
-                        ticket.status === "Approved"
-                          ? "bg-green-100 text-green-700"
-                          : ticket.status === "Rejected"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-yellow-100 text-yellow-700"
-                      }`}
-                    >
-                      {ticket.status}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => navigate(`/d/sales/bo/${ticket.id}`)}
-                      >
-                        <Eye className="h-4 w-4" />
+                  <TableCell className="text-center">
+                    <Link to={`/d/sales/view/bo/${bo.id}`}>
+                      <Button size={"xs"} variant={"outline"}>
+                        <Eye className="h-3 w-3 mr-1" /> Review
                       </Button>
-                      {ticket.status === "Pending" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive"
-                          onClick={() => setCancelTarget(ticket)}
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
+                    </Link>
                   </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
-      </div>
 
-      <Dialog
-        open={!!cancelTarget}
-        onOpenChange={(open) => !open && setCancelTarget(null)}
-      >
-        <DialogContent className="sm:max-w-[380px]">
-          <DialogHeader>
-            <DialogTitle>Terminate Active Workflow</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to cancel this return request? This
-              permanently drops the ticket out of active approval queues.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:justify-end">
-            <Button variant="outline" onClick={() => setCancelTarget(null)}>
-              Back
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleCancelExecution}
-              disabled={isSubmitting}
-            >
-              {isSubmitting && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}{" "}
-              Terminate
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+        {/* Pure Server-side Pagination Panel Controls */}
+        {!isLoading && totalRecords > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t bg-zinc-50/70 text-xs text-muted-foreground rounded-b-md">
+            <div>
+              Showing {indexOfFirstItem + 1} to{" "}
+              {Math.min(indexOfFirstItem + itemsPerPage, totalRecords)} of{" "}
+              {totalRecords} records
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => handlePageChange(Math.max(urlPage - 1, 1))}
+                disabled={urlPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="font-medium text-zinc-700 px-1">
+                Page {urlPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() =>
+                  handlePageChange(Math.min(urlPage + 1, totalPages))
+                }
+                disabled={urlPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

@@ -28,6 +28,7 @@ import AccountingViewWarehouseReturnPage from "@/views/pages/accounting/view-wh-
 import SalesToTradeReportPage from "@/views/pages/reports/stt";
 import BadOrderReportPage from "@/views/pages/reports/bo";
 import AccountingReturnToWHPage from "@/views/pages/accounting/wh-returns";
+import SalesInventoryViewPage from "@/views/pages/sales/view-inventory";
 
 function PendingActivationPage() {
   return (
@@ -196,10 +197,11 @@ export const protectedRoutes = [
       { path: "add-inventory", element: <SalesInventoryPage /> },
       { path: "add-stt", element: <SalesSTTPage /> },
       { path: "my-inventory", element: <SalesAllInventoryPage /> },
-      { path: "my-stt", element: <SalesAllSTTPage /> },
-      { path: "bo", element: <BadOrdersListPage /> },
+      { path: "view-inventory/:bp_code", element: <SalesInventoryViewPage /> },
+      { path: "my-stt/:page", element: <SalesAllSTTPage /> },
+      { path: "bo/:page", element: <BadOrdersListPage /> },
       { path: "add-bo", element: <CreateBadOrderPage /> },
-      { path: "bo/:id", element: <ViewBadOrderDetailsPage /> },
+      { path: "view/bo/:id", element: <ViewBadOrderDetailsPage /> },
     ],
   },
   {
