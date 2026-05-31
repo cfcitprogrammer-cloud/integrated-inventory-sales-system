@@ -204,7 +204,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const auditItems = [
     {
-      title: "Inventory Validation",
+      title: "Validate Inventory",
       url: "#",
       icon: Frame,
       items: [

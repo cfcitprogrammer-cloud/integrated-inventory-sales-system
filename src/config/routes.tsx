@@ -29,6 +29,11 @@ import SalesToTradeReportPage from "@/views/pages/reports/stt";
 import BadOrderReportPage from "@/views/pages/reports/bo";
 import AccountingReturnToWHPage from "@/views/pages/accounting/wh-returns";
 import SalesInventoryViewPage from "@/views/pages/sales/view-inventory";
+import AuditValidateInventoryPage from "@/views/pages/audit/validate-inventory";
+import AuditRegistryDashboard from "@/views/pages/audit/inventory-registry-dashboard";
+import AuditInspectionViewer from "@/views/pages/audit/inspection-viewer";
+import ValidatedAuditDiscrepancyReport from "@/views/pages/reports/inventory-audit";
+import EmployeeKpiDashboard from "@/views/pages/reports/employee-kpi-dashboard";
 
 function PendingActivationPage() {
   return (
@@ -242,8 +247,8 @@ export const protectedRoutes = [
   },
 
   {
-    path: "/d/reports",
-    allowedRoles: ["logistic", "admin"] as const,
+    path: "/d/audit",
+    allowedRoles: ["audit", "admin"] as const,
     children: [
       {
         path: "stt",
@@ -252,6 +257,26 @@ export const protectedRoutes = [
       {
         path: "bo",
         element: <BadOrderReportPage />,
+      },
+      {
+        path: "inventory-audit",
+        element: <ValidatedAuditDiscrepancyReport />,
+      },
+      {
+        path: "validate-inventory",
+        element: <AuditValidateInventoryPage />,
+      },
+      {
+        path: "registry",
+        element: <AuditRegistryDashboard />,
+      },
+      {
+        path: "registry/view/:auditId",
+        element: <AuditInspectionViewer />,
+      },
+      {
+        path: "employees/:employee_id/kpi",
+        element: <EmployeeKpiDashboard />,
       },
     ],
   },
