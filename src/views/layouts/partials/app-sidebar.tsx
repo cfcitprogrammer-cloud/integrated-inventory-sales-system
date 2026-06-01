@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { supabaseClients } from "@/config/db";
 import {
   AudioWaveform,
-  Bot,
   Command,
   Frame,
   GalleryVerticalEnd,
@@ -14,7 +13,7 @@ import {
   Building2,
 } from "lucide-react";
 
-import { NavMain } from "./nav-main";
+// import { NavMain } from "./nav-main";
 import { NavAdmin } from "./nav-admin";
 import { NavUser } from "./nav-user";
 import { TeamSwitcher } from "./team-switcher";
@@ -103,36 +102,36 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }, []);
 
   // Standard routes accessible by all verified employees
-  const navMainItems = [
-    {
-      title: "Inventory",
-      url: "/d/inventory/stocks-on-hand",
-      icon: Bot,
-      items: [
-        { title: "Stocks On-Hand", url: "/d/inventory/stocks-on-hand" },
-        { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
-        { title: "Sales To Trade", url: "/d/inventory/returns" },
-      ],
-    },
-    {
-      title: "Reports",
-      url: "/d/inventory/stocks-on-hand",
-      icon: Bot,
-      items: [
-        { title: "Stocks On-Hand", url: "/d/inventory/stocks-on-hand" },
-        { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
-      ],
-    },
-    {
-      title: "AI Tools",
-      url: "/d/inventory/stocks-on-hand",
-      icon: Bot,
-      items: [
-        { title: "Stocks On-Hand", url: "/d/inventory/stocks-on-hand" },
-        { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
-      ],
-    },
-  ];
+  // const navMainItems = [
+  //   // {
+  //   //   title: "Inventory",
+  //   //   url: "/d/inventory/stocks-on-hand",
+  //   //   icon: Bot,
+  //   //   items: [
+  //   //     { title: "Stocks On-Hand", url: "/d/inventory/stocks-on-hand" },
+  //   //     { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
+  //   //     { title: "Sales To Trade", url: "/d/inventory/returns" },
+  //   //   ],
+  //   // },
+  //   // {
+  //   //   title: "Reports",
+  //   //   url: "/d/inventory/stocks-on-hand",
+  //   //   icon: Bot,
+  //   //   items: [
+  //   //     { title: "Stocks On-Hand", url: "/d/inventory/stocks-on-hand" },
+  //   //     { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
+  //   //   ],
+  //   // },
+  //   // {
+  //   //   title: "AI Tools",
+  //   //   url: "/d/inventory/stocks-on-hand",
+  //   //   icon: Bot,
+  //   //   items: [
+  //   //     { title: "Stocks On-Hand", url: "/d/inventory/stocks-on-hand" },
+  //   //     { title: "Returns (Bad Orders)", url: "/d/inventory/returns" },
+  //   //   ],
+  //   // },
+  // ];
 
   // Administrative control groups
   const adminItems = [
@@ -141,16 +140,30 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       url: "#",
       icon: Frame,
       items: [
-        { title: "All Employees", url: "/d/admin/employees" },
-        { title: "Approvals", url: "/d/admin/approvals" },
-        { title: "Licenses", url: "/d/admin/licenses" },
+        {
+          title: "All Employees",
+          url: "/integrated-inventory-sales-system/d/admin/employees",
+        },
+        {
+          title: "Approvals",
+          url: "/integrated-inventory-sales-system/d/admin/approvals",
+        },
+        {
+          title: "Licenses",
+          url: "/integrated-inventory-sales-system/d/admin/licenses",
+        },
       ],
     },
     {
       title: "Companies",
       url: "#",
       icon: PieChart,
-      items: [{ title: "All Companies", url: "/d/admin/companies" }],
+      items: [
+        {
+          title: "All Companies",
+          url: "/integrated-inventory-sales-system/d/admin/companies",
+        },
+      ],
     },
   ];
 
@@ -160,23 +173,44 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       url: "#",
       icon: Frame,
       items: [
-        { title: "My Inventory", url: "/d/sales/my-inventory" },
-        { title: "Add Inventory", url: "/d/sales/inventory" },
+        {
+          title: "My Inventory",
+          url: "/integrated-inventory-sales-system/d/sales/my-inventory",
+        },
+        {
+          title: "Add Inventory",
+          url: "/integrated-inventory-sales-system/d/sales/add-inventory",
+        },
       ],
     },
     {
       title: "Bad Order",
       url: "#",
       icon: PieChart,
-      items: [{ title: "My BO/Returns", url: "/d/sales/bo" }],
+      items: [
+        {
+          title: "My BO/Returns",
+          url: "/integrated-inventory-sales-system/d/sales/bo/1",
+        },
+        {
+          title: "Request Bad Order",
+          url: "/integrated-inventory-sales-system/d/sales/add-bo",
+        },
+      ],
     },
     {
       title: "Sales to Trade",
       url: "#",
       icon: PieChart,
       items: [
-        { title: "My STT", url: "/d/sales/my-stt" },
-        { title: "Add STT", url: "/d/sales/stt" },
+        {
+          title: "My STT",
+          url: "/integrated-inventory-sales-system/d/sales/my-stt/1",
+        },
+        {
+          title: "Add STT",
+          url: "/integrated-inventory-sales-system/d/sales/add-stt",
+        },
       ],
     },
   ];
@@ -184,12 +218,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const accountingItems = [
     {
       title: "Returning to Warehouse",
-      url: "/d/accounting/return-wh/1",
+      url: "/integrated-inventory-sales-system/d/accounting/return-wh/1",
       icon: PieChart,
     },
     {
       title: "Direct Disposals",
-      url: "#",
+      url: "/integrated-inventory-sales-system/d/accounting/direct-disposals/1",
       icon: PieChart,
     },
   ];
@@ -197,7 +231,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const logisticsItems = [
     {
       title: "Returning to Warehouse",
-      url: "/d/logistics/return-wh/1",
+      url: "/integrated-inventory-sales-system/d/logistics/return-wh/1",
       icon: PieChart,
     },
   ];
@@ -208,15 +242,34 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       url: "#",
       icon: Frame,
       items: [
-        { title: "All Inventory Entry", url: "/d/admin/employees" },
-        { title: "Validate Inventory", url: "/d/admin/approvals" },
+        {
+          title: "All Inventory Entry",
+          url: "/integrated-inventory-sales-system/d/audit/registry",
+        },
+        {
+          title: "Validate Inventory",
+          url: "/integrated-inventory-sales-system/d/audit/validate-inventory",
+        },
       ],
     },
     {
       title: "Reports",
       url: "#",
       icon: PieChart,
-      items: [{ title: "All Companies", url: "/d/admin/companies" }],
+      items: [
+        {
+          title: "Sales to Trade",
+          url: "/integrated-inventory-sales-system/d/audit/stt",
+        },
+        {
+          title: "Bad Orders",
+          url: "/integrated-inventory-sales-system/d/audit/bo",
+        },
+        {
+          title: "Discrepancy",
+          url: "/integrated-inventory-sales-system/d/audit/inventory-audit",
+        },
+      ],
     },
   ];
 
@@ -235,7 +288,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </div>
         ) : (
           <>
-            <NavMain items={navMainItems} />
+            {/* <NavMain items={navMainItems} /> */}
 
             {/* Admin layout successfully renders using local context state parameters */}
             {userRole === "admin" && <NavAdmin items={adminItems} />}

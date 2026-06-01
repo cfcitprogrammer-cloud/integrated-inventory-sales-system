@@ -1,5 +1,5 @@
 // pages/reports/BadOrderReportPage.tsx
-import React, { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -122,7 +122,7 @@ export default function BadOrderReportPage() {
 
   // --- KPI Metrics & Item Accumulations Layer ---
   const totals = useMemo(() => {
-    let totalTickets = filteredData.length;
+    const totalTickets = filteredData.length;
     let totalItemQty = 0;
     let returnWarehouseQty = 0;
     let forDisposalQty = 0;

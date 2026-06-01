@@ -77,7 +77,7 @@ export function LoginForm({
         toast.warning(
           "Account pending approval. Awaiting system administrator license assignment.",
         );
-        navigate("/d/pending-activation");
+        navigate("/integrated-inventory-sales-system/d/pending-activation");
         return;
       }
 

@@ -138,7 +138,7 @@ export default function SalesAllSTTPage() {
 
   // Pure Pagination Engine routing coordinator
   const handlePageChange = (newPage: number) => {
-    navigate(`/d/sales/stt/${newPage}`);
+    navigate(`/integrated-inventory-sales-system/d/sales/stt/${newPage}`);
   };
 
   // --- Search & Pagination Computations ---

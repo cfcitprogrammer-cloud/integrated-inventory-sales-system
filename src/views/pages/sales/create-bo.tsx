@@ -2,15 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import {
-  Plus,
-  Trash2,
-  ArrowLeft,
-  Loader2,
-  FileUp,
-  X,
-  Search,
-} from "lucide-react";
+import { Trash2, Loader2, FileUp, X, Search } from "lucide-react";
 import { supabase, supabaseClients } from "@/config/db";
 
 import {

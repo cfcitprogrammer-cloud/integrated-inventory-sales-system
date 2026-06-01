@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { supabaseClients } from "@/config/db";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";

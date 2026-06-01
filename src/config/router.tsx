@@ -1,11 +1,10 @@
-import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import DashboardLayout from "../views/layouts/dashboard";
 import { publicRoutes, protectedRoutes, AuthorizeGuard } from "./routes";
 
 export default function AppRouter() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/integrated-inventory-sales-system">
       <Routes>
         {/* Default Route Redirect */}
         <Route path="/" element={<Navigate to="/a/signin" replace />} />

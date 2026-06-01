@@ -1,5 +1,5 @@
 // pages/bad-orders/AccountingReturnWarehouseDetailsPage.tsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -52,14 +52,14 @@ export default function AccountingViewReturnWarehousePage() {
       const ticketRes = await supabase()
         .from("tbl_bo_input")
         .select(
-          `*, tbl_employees (
-                    first_name,
-                    last_name
-                  )
-            first_name,
-            last_name
-          )`,
-        )
+          `
+    *,
+    tbl_employees (
+      first_name,
+      last_name
+    )
+  `,
+        ) // ✨ Cleaned up the extra fragments and parentheses here
         .eq("id", id)
         .single();
 
@@ -389,10 +389,7 @@ export default function AccountingViewReturnWarehousePage() {
                           <div className="flex items-center justify-center gap-1.5">
                             <span>{item.actual_qty ?? "Unverified"}</span>
                             {hasDiscrepancy && (
-                              <AlertTriangle
-                                className="h-3.5 w-3.5 text-amber-500 shrink-0"
-                                title="Logistics variant identified"
-                              />
+                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                             )}
                           </div>
                         </TableCell>

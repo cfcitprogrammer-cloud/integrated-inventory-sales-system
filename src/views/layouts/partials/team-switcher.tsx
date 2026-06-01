@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { useEffect, useState } from "react";
 import { ChevronsUpDown, Building2, Loader2 } from "lucide-react";
 import { supabaseClients } from "@/config/db";

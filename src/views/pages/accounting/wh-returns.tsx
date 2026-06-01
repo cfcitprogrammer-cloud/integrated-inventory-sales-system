@@ -45,7 +45,9 @@ export default function AccountingReturnToWHPage() {
   const itemsPerPage = 10;
 
   const handlePageChange = (newPage: number) => {
-    navigate(`/d/accounting/return-wh/${newPage}`);
+    navigate(
+      `/integrated-inventory-sales-system/d/accounting/return-wh/${newPage}`,
+    );
   };
 
   // 💡 Pure Debounce Loop: Only sync text tokens. No routing interference allowed here!

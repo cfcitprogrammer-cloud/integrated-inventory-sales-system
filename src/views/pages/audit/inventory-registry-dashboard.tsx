@@ -2,25 +2,10 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabaseClients } from "@/config/db";
 import { toast } from "sonner";
-import {
-  Building2,
-  Calendar,
-  MapPin,
-  Eye,
-  AlertCircle,
-  Layers,
-  ArrowRight,
-  Loader2,
-} from "lucide-react";
+import { Building2, Eye, Layers, ArrowRight } from "lucide-react";
 
 // shadcn/ui structural component imports
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -299,7 +284,9 @@ export default function AuditRegistryDashboard(): React.JSX.Element {
                           className="h-7 bg-indigo-600 text-white text-[11px] gap-1 hover:bg-indigo-700"
                           onClick={() => {
                             setIsDialogOpen(false);
-                            navigate(`/d/audit/registry/view/${session.id}`);
+                            navigate(
+                              `/integrated-inventory-sales-system/d/audit/registry/view/${session.id}`,
+                            );
                           }}
                         >
                           Open <ArrowRight className="h-3 w-3" />

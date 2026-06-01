@@ -12,8 +12,15 @@ import {
   type TooltipRoundness,
   type TooltipVariant,
 } from "@/components/evilcharts/ui/tooltip";
-import { ChartLegend, ChartLegendContent, type ChartLegendVariant } from "@/components/evilcharts/ui/legend";
-import { ChartBackground, type BackgroundVariant } from "@/components/evilcharts/ui/background";
+import {
+  ChartLegend,
+  ChartLegendContent,
+  type ChartLegendVariant,
+} from "@/components/evilcharts/ui/legend";
+import {
+  ChartBackground,
+  type BackgroundVariant,
+} from "@/components/evilcharts/ui/background";
 import {
   createContext,
   use,
@@ -31,7 +38,7 @@ import {
   Sector,
   type SectorProps,
 } from "recharts";
-import { TypedDataKey } from "recharts/types/util/typedDataKey";
+import type { TypedDataKey } from "recharts/types/util/typedDataKey";
 
 // Constants
 const DEFAULT_INNER_RADIUS = "30%";
@@ -97,7 +104,9 @@ type EvilRadialChartBaseProps<TData extends Record<string, unknown>> = {
   innerRadius?: number | string; // inner radius of the radial bars
   outerRadius?: number | string; // outer radius of the radial bars
   defaultSelectedDataKey?: string | null; // bar selected on first render
-  onSelectionChange?: (selection: { dataKey: string; value: number } | null) => void; // fires when the selected bar changes
+  onSelectionChange?: (
+    selection: { dataKey: string; value: number } | null,
+  ) => void; // fires when the selected bar changes
   isLoading?: boolean; // shows the animated loading skeleton
   backgroundVariant?: BackgroundVariant; // background pattern behind the chart
 };
@@ -127,7 +136,9 @@ export function EvilRadialChart<TData extends Record<string, unknown>>({
   backgroundVariant,
 }: EvilRadialChartProps<TData>) {
   const chartId = useId().replace(/:/g, ""); // colon-free id keeps CSS/SVG selectors valid
-  const [selectedBar, setSelectedBar] = useState<string | null>(defaultSelectedDataKey);
+  const [selectedBar, setSelectedBar] = useState<string | null>(
+    defaultSelectedDataKey,
+  );
   const loadingData = useLoadingData(isLoading);
 
   const variantConfig = getVariantConfig(variant);
@@ -136,7 +147,9 @@ export function EvilRadialChart<TData extends Record<string, unknown>>({
   const selectBar = useCallback(
     (barName: string | null, value?: number) => {
       setSelectedBar(barName);
-      onSelectionChange?.(barName === null ? null : { dataKey: barName, value: value ?? 0 });
+      onSelectionChange?.(
+        barName === null ? null : { dataKey: barName, value: value ?? 0 },
+      );
     },
     [onSelectionChange],
   );
@@ -219,7 +232,8 @@ export function RadialBar({
   glowingBars = EMPTY_GLOWING_BARS,
   radialBarProps,
 }: RadialBarProps) {
-  const { nameKey, chartId, isLoading, selectedBar, selectBar } = useRadialChart();
+  const { nameKey, chartId, isLoading, selectedBar, selectBar } =
+    useRadialChart();
 
   // The root renders the skeleton bar while loading, so the real bar steps aside
   if (isLoading) return null;
@@ -236,20 +250,27 @@ export function RadialBar({
         onClick={(payload, index) => {
           if (!isClickable) return;
           const entry = payload as Record<string, unknown>;
-          const barName = (entry?.[nameKey] as string | undefined) ?? String(index);
+          const barName =
+            (entry?.[nameKey] as string | undefined) ?? String(index);
           const value = Number(entry?.[dataKey] ?? 0);
           // Clicking the selected bar clears the selection, otherwise selects it
           selectBar(selectedBar === barName ? null : barName, value);
         }}
         shape={(props: SectorProps) => {
-          const barName = (props as unknown as Record<string, unknown>)[nameKey] as string;
+          const barName = (props as unknown as Record<string, unknown>)[
+            nameKey
+          ] as string;
           const isGlowing = glowingBars.includes(barName);
           const isSelected = selectedBar === null || selectedBar === barName;
 
           return (
             <Sector
               {...props}
-              filter={isGlowing ? `url(#${chartId}-radial-glow-${barName})` : undefined}
+              filter={
+                isGlowing
+                  ? `url(#${chartId}-radial-glow-${barName})`
+                  : undefined
+              }
               opacity={isClickable && !isSelected ? 0.3 : 1}
               className="transition-opacity duration-200"
             />
@@ -258,7 +279,9 @@ export function RadialBar({
         {...radialBarProps}
       />
       <defs>
-        {glowingBars.length > 0 && <GlowFilterStyle chartId={chartId} glowingBars={glowingBars} />}
+        {glowingBars.length > 0 && (
+          <GlowFilterStyle chartId={chartId} glowingBars={glowingBars} />
+        )}
       </defs>
     </>
   );
@@ -482,7 +505,9 @@ const LoadingRadialBar = () => {
       isAnimationActive
       animationDuration={LOADING_ANIMATION_DURATION}
       animationEasing="ease-in-out"
-      shape={(props: SectorProps) => <Sector {...props} fill="currentColor" fillOpacity={0.25} />}
+      shape={(props: SectorProps) => (
+        <Sector {...props} fill="currentColor" fillOpacity={0.25} />
+      )}
     />
   );
 };

@@ -1,5 +1,5 @@
 // pages/bad-orders/ViewReturnWarehouseDetailsPage.tsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -391,10 +391,7 @@ export default function LogisticsViewReturnWarehousePage() {
                               min={0}
                             />
                             {isDiscrepancy && (
-                              <AlertTriangle
-                                className="h-4 w-4 text-amber-500 shrink-0"
-                                title="Quantity discrepancy detected against request"
-                              />
+                              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
                             )}
                           </div>
                         </TableCell>

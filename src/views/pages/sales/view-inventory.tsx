@@ -341,7 +341,11 @@ export default function SalesInventoryViewPage() {
             variant="outline"
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => navigate("/d/sales/my-inventory")}
+            onClick={() =>
+              navigate(
+                "/integrated-inventory-sales-system/d/sales/my-inventory",
+              )
+            }
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>

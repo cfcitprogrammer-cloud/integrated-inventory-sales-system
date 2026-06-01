@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { supabaseClients } from "./db";
 import { Loader2 } from "lucide-react";
@@ -13,7 +13,6 @@ import SignupPage from "@/views/pages/auth/signup-page";
 import ReturnsPage from "@/views/pages/inventory/returns-page";
 import StocksOnHandPage from "@/views/pages/inventory/stocks-on-hand-page";
 import SalesInventoryPage from "@/views/pages/sales/inventory-page";
-import BadOrdersManagement from "@/views/pages/sales/bad-order-request-page";
 import SalesAllInventoryPage from "@/views/pages/sales/all-inventory";
 import SalesAllSTTPage from "@/views/pages/sales/all-stt";
 import SalesSTTPage from "@/views/pages/sales/stt";
@@ -50,7 +49,13 @@ function PendingActivationPage() {
 }
 
 interface GuardProps {
-  allowedRoles?: readonly ("admin" | "sales" | "logistic" | "accounting")[];
+  allowedRoles?: readonly (
+    | "admin"
+    | "sales"
+    | "logistic"
+    | "accounting"
+    | "audit"
+  )[];
   allowPending?: boolean;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/config/db";
 import { toast } from "sonner";
@@ -17,7 +17,6 @@ import {
   Check,
   ChevronsUpDown,
   Plus,
-  UserPlus,
 } from "lucide-react";
 
 // shadcn/ui components
@@ -156,8 +155,8 @@ export default function LicensesPage() {
   const fetchLicenses = useCallback(async () => {
     setIsLoading(true);
     try {
-      let offsetFrom = (currentPage - 1) * itemsPerPage;
-      let offsetTo = offsetFrom + itemsPerPage - 1;
+      const offsetFrom = (currentPage - 1) * itemsPerPage;
+      const offsetTo = offsetFrom + itemsPerPage - 1;
 
       let query = supabase()
         .from("tbl_licenses")

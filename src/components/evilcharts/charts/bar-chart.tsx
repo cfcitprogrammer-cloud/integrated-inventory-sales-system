@@ -7,15 +7,26 @@ import {
   getLoadingData,
   LoadingIndicator,
 } from "@/components/evilcharts/ui/chart";
-import { EvilBrush, useEvilBrush, type EvilBrushRange } from "@/components/evilcharts/ui/evil-brush";
+import {
+  EvilBrush,
+  useEvilBrush,
+  type EvilBrushRange,
+} from "@/components/evilcharts/ui/evil-brush";
 import {
   ChartTooltip,
   ChartTooltipContent,
   type TooltipRoundness,
   type TooltipVariant,
 } from "@/components/evilcharts/ui/tooltip";
-import { ChartLegend, ChartLegendContent, type ChartLegendVariant } from "@/components/evilcharts/ui/legend";
-import { ChartBackground, type BackgroundVariant } from "@/components/evilcharts/ui/background";
+import {
+  ChartLegend,
+  ChartLegendContent,
+  type ChartLegendVariant,
+} from "@/components/evilcharts/ui/legend";
+import {
+  ChartBackground,
+  type BackgroundVariant,
+} from "@/components/evilcharts/ui/background";
 import {
   createContext,
   use,
@@ -36,7 +47,7 @@ import {
   XAxis as RechartsXAxis,
   YAxis as RechartsYAxis,
 } from "recharts";
-import { RectRadius } from "recharts/types/shape/Rectangle";
+import type { RectRadius } from "recharts/types/shape/Rectangle";
 import { motion, useReducedMotion } from "motion/react";
 
 // Constants
@@ -48,7 +59,13 @@ const BAR_GROW_DURATION = 0.5; // per-bar grow-in length, in seconds
 const BAR_STAGGER = 0.05; // delay between consecutive bars, in seconds
 const REVEAL_EASE: [number, number, number, number] = [0, 0.7, 0.5, 1]; // grow-in easing
 
-type BarVariant = "default" | "hatched" | "duotone" | "duotone-reverse" | "gradient" | "stripped";
+type BarVariant =
+  | "default"
+  | "hatched"
+  | "duotone"
+  | "duotone-reverse"
+  | "gradient"
+  | "stripped";
 type StackType = "default" | "stacked" | "percent";
 type BarLayout = "vertical" | "horizontal";
 
@@ -61,7 +78,12 @@ type BarLayout = "vertical" | "horizontal";
  * chart. `"none"` opts out entirely; it is also what a device with the OS
  * "reduce motion" preference falls back to automatically.
  */
-type BarAnimationType = "none" | "left-to-right" | "right-to-left" | "center-out" | "edges-in";
+type BarAnimationType =
+  | "none"
+  | "left-to-right"
+  | "right-to-left"
+  | "center-out"
+  | "edges-in";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared context
@@ -179,7 +201,9 @@ export function EvilBarChart<
   // and Recharts' bar remounts read elapsed time from here instead of replaying.
   // Lazy useState stamps the time once, on the initial render only.
   const [introStartedAt] = useState(() => Date.now());
-  const [selectedDataKey, setSelectedDataKey] = useState<string | null>(defaultSelectedDataKey);
+  const [selectedDataKey, setSelectedDataKey] = useState<string | null>(
+    defaultSelectedDataKey,
+  );
   const [isMouseInChart, setIsMouseInChart] = useState(false);
   const { loadingData, onShimmerExit } = useLoadingData(isLoading, loadingBars);
   const { visibleData, brushProps } = useEvilBrush({ data });
@@ -270,7 +294,9 @@ export function EvilBarChart<
           {backgroundVariant && <ChartBackground variant={backgroundVariant} />}
           <ReferenceLine color="white" />
           {children}
-          {isLoading && <LoadingBar chartId={chartId} onShimmerExit={onShimmerExit} />}
+          {isLoading && (
+            <LoadingBar chartId={chartId} onShimmerExit={onShimmerExit} />
+          )}
         </RechartsBarChart>
       </ChartContainer>
     </BarChartContext>
@@ -370,25 +396,43 @@ export function Bar({
         // Recharts' built-in bar animation is permanently disabled — every bar
         // instead grows in from its baseline via the staggered motion.dev shape.
         isAnimationActive={false}
-        style={isClickable || enableHoverHighlight ? { cursor: "pointer" } : undefined}
+        style={
+          isClickable || enableHoverHighlight
+            ? { cursor: "pointer" }
+            : undefined
+        }
         shape={(props: unknown) => (
-          <CustomBar {...(props as BarShapeProps)} {...customBarProps} animationType={revealType} />
+          <CustomBar
+            {...(props as BarShapeProps)}
+            {...customBarProps}
+            animationType={revealType}
+          />
         )}
         activeBar={(props: unknown) => (
           // The active (hovered) bar must never re-run the grow-in animation
-          <CustomBar {...(props as BarShapeProps)} {...customBarProps} animationType="none" />
+          <CustomBar
+            {...(props as BarShapeProps)}
+            {...customBarProps}
+            animationType="none"
+          />
         )}
         {...barProps}
       />
       <defs>
         <ColorGradient id={id} dataKey={dataKey} config={config} />
         {variant === "hatched" && <HatchedPattern id={id} dataKey={dataKey} />}
-        {variant === "duotone" && <DuotonePattern id={id} dataKey={dataKey} config={config} />}
+        {variant === "duotone" && (
+          <DuotonePattern id={id} dataKey={dataKey} config={config} />
+        )}
         {variant === "duotone-reverse" && (
           <DuotoneReversePattern id={id} dataKey={dataKey} config={config} />
         )}
-        {variant === "gradient" && <GradientPattern id={id} dataKey={dataKey} />}
-        {variant === "stripped" && <StrippedPattern id={id} dataKey={dataKey} />}
+        {variant === "gradient" && (
+          <GradientPattern id={id} dataKey={dataKey} />
+        )}
+        {variant === "stripped" && (
+          <StrippedPattern id={id} dataKey={dataKey} />
+        )}
         {bufferBar && <BufferHatchedPattern id={id} dataKey={dataKey} />}
         {glowing && <GlowFilter id={id} dataKey={dataKey} />}
       </defs>
@@ -469,7 +513,12 @@ type GridProps = ComponentProps<typeof CartesianGrid>;
  * axis based on the chart layout, and forwards every Recharts CartesianGrid
  * prop for full control.
  */
-export function Grid({ strokeDasharray = "3 3", vertical, horizontal, ...props }: GridProps) {
+export function Grid({
+  strokeDasharray = "3 3",
+  vertical,
+  horizontal,
+  ...props
+}: GridProps) {
   const { isHorizontal } = useBarChart();
 
   return (
@@ -502,7 +551,11 @@ export function Tooltip({ variant, roundness, defaultIndex }: TooltipProps) {
       cursor={false}
       defaultIndex={defaultIndex}
       content={
-        <ChartTooltipContent selected={selectedDataKey} roundness={roundness} variant={variant} />
+        <ChartTooltipContent
+          selected={selectedDataKey}
+          roundness={roundness}
+          variant={variant}
+        />
       }
     />
   );
@@ -612,7 +665,13 @@ const CustomBar = (props: CustomBarProps) => {
   const index = typeof props.index === "number" ? props.index : -1;
   const isLastBar = bufferBar && dataLength > 0 && index === dataLength - 1;
   const isStripped = variant === "stripped";
-  const grow = getBarGrowAnimation(animationType, index, dataLength, isHorizontal, introStartedAt);
+  const grow = getBarGrowAnimation(
+    animationType,
+    index,
+    dataLength,
+    isHorizontal,
+    introStartedAt,
+  );
 
   const fill = isLastBar
     ? `url(#${id}-buffer-hatched-${dataKey})`
@@ -627,10 +686,13 @@ const CustomBar = (props: CustomBarProps) => {
     isMouseInChart,
     isActive,
   });
-  const cursorStyle = isClickable || enableHoverHighlight ? { cursor: "pointer" } : undefined;
+  const cursorStyle =
+    isClickable || enableHoverHighlight ? { cursor: "pointer" } : undefined;
 
   // Stripped bars round only their top corners; every other variant rounds all four
-  const radius: RectRadius = isStripped ? [barRadius, barRadius, 0, 0] : barRadius;
+  const radius: RectRadius = isStripped
+    ? [barRadius, barRadius, 0, 0]
+    : barRadius;
 
   // The visible, painted bar — plus the stripped variant's solid top strip
   const visibleBar = (
@@ -744,8 +806,18 @@ const getBarGrowAnimation = (
 
   // Horizontal bars grow rightward from the left edge, vertical from the bottom
   return isHorizontal
-    ? { initial: { scaleX: from }, animate: { scaleX: 1 }, transition, style: { originX: 0 } }
-    : { initial: { scaleY: from }, animate: { scaleY: 1 }, transition, style: { originY: 1 } };
+    ? {
+        initial: { scaleX: from },
+        animate: { scaleX: 1 },
+        transition,
+        style: { originX: 0 },
+      }
+    : {
+        initial: { scaleY: from },
+        animate: { scaleY: 1 },
+        transition,
+        style: { originY: 1 },
+      };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -753,7 +825,11 @@ const getBarGrowAnimation = (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Resolves the SVG paint reference for a bar's fill based on its variant
-const getVariantFill = (variant: BarVariant, id: string, dataKey: string): string => {
+const getVariantFill = (
+  variant: BarVariant,
+  id: string,
+  dataKey: string,
+): string => {
   switch (variant) {
     case "hatched":
       return `url(#${id}-hatched-${dataKey})`;
@@ -786,8 +862,10 @@ const getBarOpacity = ({
   isMouseInChart?: boolean;
   isActive?: boolean;
 }) => {
-  const isSelectedDataKey = selectedDataKey === null || selectedDataKey === dataKey;
-  const clickOpacity = isClickable && selectedDataKey !== null ? (isSelectedDataKey ? 1 : 0.3) : 1;
+  const isSelectedDataKey =
+    selectedDataKey === null || selectedDataKey === dataKey;
+  const clickOpacity =
+    isClickable && selectedDataKey !== null ? (isSelectedDataKey ? 1 : 0.3) : 1;
 
   // While hovering, the hovered bar keeps its click opacity and the rest dim further
   if (enableHoverHighlight && isMouseInChart) {
@@ -857,7 +935,11 @@ const HatchedPattern = ({ id, dataKey }: StyleProps) => {
         <rect width="1.5" height="5" fill="white" fillOpacity={1} />
       </pattern>
       <mask id={`${id}-hatched-mask-${dataKey}`}>
-        <rect width="100%" height="100%" fill={`url(#${id}-hatched-mask-pattern)`} />
+        <rect
+          width="100%"
+          height="100%"
+          fill={`url(#${id}-hatched-mask-pattern)`}
+        />
       </mask>
       <pattern
         id={`${id}-hatched-${dataKey}`}
@@ -893,7 +975,11 @@ const BufferHatchedPattern = ({ id, dataKey }: StyleProps) => {
         <rect width="1" height="5" fill="white" fillOpacity={1} />
       </pattern>
       <mask id={`${id}-buffer-hatched-mask-${dataKey}`}>
-        <rect width="100%" height="100%" fill={`url(#${id}-buffer-hatched-mask-pattern)`} />
+        <rect
+          width="100%"
+          height="100%"
+          fill={`url(#${id}-buffer-hatched-mask-pattern)`}
+        />
       </mask>
       <pattern
         id={`${id}-buffer-hatched-${dataKey}`}
@@ -913,7 +999,11 @@ const BufferHatchedPattern = ({ id, dataKey }: StyleProps) => {
 };
 
 /** Two-tone fill — a half-faded, half-solid split applied per bar bounding box. */
-const DuotonePattern = ({ id, dataKey, config }: StyleProps & { config: ChartConfig }) => {
+const DuotonePattern = ({
+  id,
+  dataKey,
+  config,
+}: StyleProps & { config: ChartConfig }) => {
   const colorsCount = getColorsCount(config[dataKey] ?? {});
 
   return (
@@ -955,7 +1045,10 @@ const DuotonePattern = ({ id, dataKey, config }: StyleProps & { config: ChartCon
           })
         )}
       </linearGradient>
-      <mask id={`${id}-duotone-mask-${dataKey}`} maskContentUnits="objectBoundingBox">
+      <mask
+        id={`${id}-duotone-mask-${dataKey}`}
+        maskContentUnits="objectBoundingBox"
+      >
         <rect
           x="0"
           y="0"
@@ -985,7 +1078,11 @@ const DuotonePattern = ({ id, dataKey, config }: StyleProps & { config: ChartCon
 };
 
 /** Two-tone fill with the solid and faded halves reversed from `duotone`. */
-const DuotoneReversePattern = ({ id, dataKey, config }: StyleProps & { config: ChartConfig }) => {
+const DuotoneReversePattern = ({
+  id,
+  dataKey,
+  config,
+}: StyleProps & { config: ChartConfig }) => {
   const colorsCount = getColorsCount(config[dataKey] ?? {});
 
   return (
@@ -1027,7 +1124,10 @@ const DuotoneReversePattern = ({ id, dataKey, config }: StyleProps & { config: C
           })
         )}
       </linearGradient>
-      <mask id={`${id}-duotone-reverse-mask-${dataKey}`} maskContentUnits="objectBoundingBox">
+      <mask
+        id={`${id}-duotone-reverse-mask-${dataKey}`}
+        maskContentUnits="objectBoundingBox"
+      >
         <rect
           x="0"
           y="0"
@@ -1060,12 +1160,22 @@ const DuotoneReversePattern = ({ id, dataKey, config }: StyleProps & { config: C
 const GradientPattern = ({ id, dataKey }: StyleProps) => {
   return (
     <>
-      <linearGradient id={`${id}-gradient-mask-gradient`} x1="0" y1="0" x2="0" y2="1">
+      <linearGradient
+        id={`${id}-gradient-mask-gradient`}
+        x1="0"
+        y1="0"
+        x2="0"
+        y2="1"
+      >
         <stop offset="20%" stopColor="white" stopOpacity={1} />
         <stop offset="90%" stopColor="white" stopOpacity={0} />
       </linearGradient>
       <mask id={`${id}-gradient-mask-${dataKey}`}>
-        <rect width="100%" height="100%" fill={`url(#${id}-gradient-mask-gradient)`} />
+        <rect
+          width="100%"
+          height="100%"
+          fill={`url(#${id}-gradient-mask-gradient)`}
+        />
       </mask>
       <pattern
         id={`${id}-gradient-${dataKey}`}
@@ -1088,12 +1198,22 @@ const GradientPattern = ({ id, dataKey }: StyleProps) => {
 const StrippedPattern = ({ id, dataKey }: StyleProps) => {
   return (
     <>
-      <linearGradient id={`${id}-stripped-mask-gradient`} x1="0" y1="0" x2="0" y2="1">
+      <linearGradient
+        id={`${id}-stripped-mask-gradient`}
+        x1="0"
+        y1="0"
+        x2="0"
+        y2="1"
+      >
         <stop offset="0%" stopColor="white" stopOpacity={0.2} />
         <stop offset="100%" stopColor="white" stopOpacity={0.2} />
       </linearGradient>
       <mask id={`${id}-stripped-mask-${dataKey}`}>
-        <rect width="100%" height="100%" fill={`url(#${id}-stripped-mask-gradient)`} />
+        <rect
+          width="100%"
+          height="100%"
+          fill={`url(#${id}-stripped-mask-gradient)`}
+        />
       </mask>
       <pattern
         id={`${id}-stripped-${dataKey}`}
@@ -1115,7 +1235,13 @@ const StrippedPattern = ({ id, dataKey }: StyleProps) => {
 /** Soft outer-glow filter applied to a glowing bar. */
 const GlowFilter = ({ id, dataKey }: StyleProps) => {
   return (
-    <filter id={`${id}-bar-glow-${dataKey}`} x="-100%" y="-100%" width="300%" height="300%">
+    <filter
+      id={`${id}-bar-glow-${dataKey}`}
+      x="-100%"
+      y="-100%"
+      width="300%"
+      height="300%"
+    >
       <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur" />
       <feColorMatrix
         in="blur"
@@ -1149,7 +1275,10 @@ const generateEasedGradientStops = (
     // Sine-based bell curve easing: peaks at center (t=0.5), smooth falloff at edges
     const eased = Math.sin(t * Math.PI) ** 2;
     const opacity = minOpacity + eased * (maxOpacity - minOpacity);
-    return { offset: `${(t * 100).toFixed(0)}%`, opacity: Number(opacity.toFixed(3)) };
+    return {
+      offset: `${(t * 100).toFixed(0)}%`,
+      opacity: Number(opacity.toFixed(3)),
+    };
   });
 };
 
@@ -1236,9 +1365,20 @@ const LoadingBarPattern = ({
 
   return (
     <>
-      <linearGradient id={`${chartId}-loading-mask-gradient`} x1="0" y1="0" x2="1" y2="0">
+      <linearGradient
+        id={`${chartId}-loading-mask-gradient`}
+        x1="0"
+        y1="0"
+        x2="1"
+        y2="0"
+      >
         {gradientStops.map(({ offset, opacity }) => (
-          <stop key={offset} offset={offset} stopColor="white" stopOpacity={opacity} />
+          <stop
+            key={offset}
+            offset={offset}
+            stopColor="white"
+            stopOpacity={opacity}
+          />
         ))}
       </linearGradient>
       <pattern
@@ -1278,7 +1418,11 @@ const LoadingBarPattern = ({
         />
       </pattern>
       <mask id={`${chartId}-loading-mask`} maskUnits="userSpaceOnUse">
-        <rect width="100%" height="100%" fill={`url(#${chartId}-loading-mask-pattern)`} />
+        <rect
+          width="100%"
+          height="100%"
+          fill={`url(#${chartId}-loading-mask-pattern)`}
+        />
       </mask>
     </>
   );

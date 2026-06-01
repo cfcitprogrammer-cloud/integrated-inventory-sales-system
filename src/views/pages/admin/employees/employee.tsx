@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabaseClients } from "@/config/db";
 import { toast } from "sonner";
 import {
@@ -19,16 +19,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import type { EmployeeData } from "./all-employees";
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 
 interface DetailViewProps {
   employeeId: string;
   onLicenseChange: () => void;
 }
 
-export default function EmployeeDetailView({
-  employeeId,
-  onLicenseChange,
-}: DetailViewProps) {
+export default function EmployeeDetailView({ employeeId }: DetailViewProps) {
   const [profile, setProfile] = useState<EmployeeData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -133,6 +132,10 @@ export default function EmployeeDetailView({
                 })}
               </span>
             </div>
+
+            <Link to={`/d/audit/employees/${profile.id}/kpi`}>
+              <Button>See Employee KPI</Button>
+            </Link>
           </div>
         </CardContent>
       </Card>
