@@ -22,13 +22,47 @@ import {
 } from "@/components/ui/table";
 import RequestTimeline from "@/components/custom/timeline";
 
+// --- Strong Type Definitions ---
+interface EmployeeRelation {
+  first_name: string;
+  last_name: string;
+}
+
+interface BadOrderTicket {
+  id: number;
+  outlet_name: string;
+  bp_code: string;
+  status: string;
+  remarks?: string;
+  tbl_employees?: EmployeeRelation | null;
+  [key: string]: any;
+}
+
+interface DisposalItem {
+  id: number;
+  bo_input_id: number;
+  item_code: string;
+  item_description: string;
+  request_qty: number;
+  uom: string;
+  expiration_date?: string | null; // Added field
+  reason?: string | null; // Added field
+}
+
+interface Attachment {
+  id: number;
+  bo_input_id: number;
+  file_path: string;
+  file_name?: string;
+}
+
 export default function ViewBadOrderDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [ticket, setTicket] = useState<any>(null);
-  const [items, setItems] = useState<any[]>([]);
-  const [attachments, setAttachments] = useState<any[]>([]);
+  const [ticket, setTicket] = useState<BadOrderTicket | null>(null);
+  const [items, setItems] = useState<DisposalItem[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -36,7 +70,8 @@ export default function ViewBadOrderDetailsPage() {
       if (!id) return;
       setIsLoading(true);
       try {
-        const ticketRes = await supabase()
+        // 1. Fetch main ticket data with employee relation joined
+        const { data: ticketData, error: ticketErr } = await supabase()
           .from("tbl_bo_input")
           .select(
             `*, tbl_employees (
@@ -47,17 +82,25 @@ export default function ViewBadOrderDetailsPage() {
           .eq("id", id)
           .single();
 
-        const itemsRes = await supabase()
-          .from("tbl_bo_input_items")
-          .select("*")
-          .eq("bo_input_id", id);
+        if (ticketErr) throw ticketErr;
 
-        const attachRes = await supabase()
-          .from("tbl_bo_attachments")
-          .select("*")
-          .eq("bo_input_id", id);
+        // 2. Fetch related configuration lists concurrently
+        const [itemsRes, attachRes] = await Promise.all([
+          supabase()
+            .from("tbl_bo_input_items")
+            .select("*")
+            .eq("bo_input_id", id),
+          supabase()
+            .from("tbl_bo_attachments")
+            .select("*")
+            .eq("bo_input_id", id),
+        ]);
 
-        setTicket(ticketRes.data);
+        if (itemsRes.error) throw itemsRes.error;
+        if (attachRes.error) throw attachRes.error;
+
+        // 3. Commit states safely
+        setTicket(ticketData as BadOrderTicket);
         setItems(itemsRes.data || []);
         setAttachments(attachRes.data || []);
       } catch (err) {
@@ -215,11 +258,17 @@ export default function ViewBadOrderDetailsPage() {
                     <TableHead className="font-semibold text-slate-700">
                       Description
                     </TableHead>
-                    <TableHead className="text-center w-[120px] font-semibold text-slate-700">
+                    <TableHead className="text-center w-[100px] font-semibold text-slate-700">
                       Disposal Qty
                     </TableHead>
-                    <TableHead className="font-semibold text-slate-700">
+                    <TableHead className="font-semibold text-slate-700 w-[90px]">
                       Unit Type
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700 w-[120px]">
+                      Expiration
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700">
+                      Reason / Defect
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -227,7 +276,7 @@ export default function ViewBadOrderDetailsPage() {
                   {items.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={4}
+                        colSpan={6}
                         className="text-center py-8 text-muted-foreground font-medium"
                       >
                         No items found listed in this disposal request.
@@ -243,7 +292,7 @@ export default function ViewBadOrderDetailsPage() {
                           {item.item_code}
                         </TableCell>
                         <TableCell
-                          className="max-w-[240px] font-medium text-slate-900 truncate"
+                          className="max-w-[180px] font-medium text-slate-900 truncate"
                           title={item.item_description}
                         >
                           {item.item_description}
@@ -253,6 +302,23 @@ export default function ViewBadOrderDetailsPage() {
                         </TableCell>
                         <TableCell className="font-medium text-slate-500 uppercase font-mono text-[11px]">
                           {item.uom}
+                        </TableCell>
+                        <TableCell className="font-mono text-slate-600 whitespace-nowrap">
+                          {item.expiration_date ? item.expiration_date : "—"}
+                        </TableCell>
+                        <TableCell
+                          className="text-slate-700 font-medium max-w-[150px] truncate"
+                          title={item.reason || ""}
+                        >
+                          {item.reason ? (
+                            <span className="bg-amber-50 text-amber-800 border border-amber-100 px-2 py-0.5 rounded text-[11px]">
+                              {item.reason}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">
+                              Unspecified
+                            </span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))

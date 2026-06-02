@@ -1,4 +1,3 @@
-// pages/bad-orders/CreateBadOrderPage.tsx
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -10,8 +9,10 @@ import {
   FileUp,
   X,
   Search,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 import { supabase, supabaseClients } from "@/config/db";
+import { format } from "date-fns";
 
 import {
   Table,
@@ -23,13 +24,37 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { emailNotifierUtil } from "@/lib/email-notifier";
+
+const REASON_OPTIONS = [
+  "Packaging Issue",
+  "Rat Bite",
+  "Deflated",
+  "Expired",
+  "Other, please specify",
+];
 
 interface NewItemRow {
   item_code: string;
   item_description: string;
   request_qty: number;
   uom: string;
+  expiration_date?: Date;
+  reason: string;
+  custom_reason?: string;
 }
 
 interface ExtensionProductVariant {
@@ -84,6 +109,8 @@ export default function CreateBadOrderPage() {
     item_description: "",
     request_qty: 1,
     uom: "PCS",
+    reason: "",
+    custom_reason: "",
   });
   const [files, setFiles] = useState<File[]>([]);
 
@@ -192,6 +219,17 @@ export default function CreateBadOrderPage() {
         "Filing volume vectors must be greater than zero units.",
       );
     }
+    if (!currentItem.reason) {
+      return toast.error("Please assign a reason for damage documentation.");
+    }
+    if (
+      currentItem.reason === "Other, please specify" &&
+      !currentItem.custom_reason?.trim()
+    ) {
+      return toast.error(
+        "Please explicitly write out your alternate custom reason detail.",
+      );
+    }
 
     setManifestItems((p) => [...p, currentItem]);
 
@@ -201,6 +239,8 @@ export default function CreateBadOrderPage() {
       item_description: "",
       request_qty: 1,
       uom: "PCS",
+      reason: "",
+      custom_reason: "",
     });
     setSkuSearch("");
   };
@@ -237,8 +277,18 @@ export default function CreateBadOrderPage() {
 
       if (tErr) throw tErr;
 
-      // 2. Insert SKUs / Child Items Profile
-      const skus = manifestItems.map((m) => ({ ...m, bo_input_id: ticket.id }));
+      // 2. Insert SKUs / Child Items Profile (mapping localized item attributes)
+      const skus = manifestItems.map((m) => ({
+        bo_input_id: ticket.id,
+        item_code: m.item_code,
+        item_description: m.item_description,
+        request_qty: m.request_qty,
+        uom: m.uom,
+        reason:
+          m.reason === "Other, please specify" ? m.custom_reason : m.reason,
+        expiration_date: m.expiration_date,
+      }));
+
       const { error: iErr } = await supabase()
         .from("tbl_bo_input_items")
         .insert(skus);
@@ -286,28 +336,54 @@ export default function CreateBadOrderPage() {
 
       toast.success("Bad Order requested successfully.");
 
+      // --- DISSECT CURRENT USER FOR THE FILER OBJECT PAYLOAD ---
+      const fullName = user.user_metadata?.full_name || "";
+      let firstName = user.user_metadata?.first_name || "";
+      let lastName = user.user_metadata?.last_name || "";
+
+      // Fallback: If discrete names don't exist but full_name does, split it
+      if (!firstName && !lastName && fullName) {
+        const parts = fullName.trim().split(/\s+/);
+        firstName = parts[0] || "";
+        lastName = parts.slice(1).join(" ") || "";
+      }
+
+      // Final Fallback: If still empty, use email prefix
+      if (!firstName && user.email) {
+        firstName = user.email.split("@")[0];
+        lastName = "";
+      }
+
       const commonEmailPayload = {
+        bpCode: formData.bp_code,
+        status: "Open",
+        filer: {
+          first_name: firstName,
+          last_name: lastName,
+        },
         requestId: String(ticket.id),
-        submittedBy:
-          user.user_metadata?.full_name || user.email || "System Operator",
-        department: "Logistics/Warehouse Operations",
+        submittedBy: fullName || user.email || "System Operator",
         dateTime: new Date(ticket.created_at || Date.now()).toLocaleString(),
-        warehouseLocation: "Central Sorting Hub",
         items: manifestItems.map((m) => ({
-          sku: m.item_code,
-          description: m.item_description,
+          item_code: m.item_code,
+          item_description: m.item_description,
           uom: m.uom,
-          qty: Number(m.request_qty),
+          request_qty: Number(m.request_qty),
+          reason:
+            m.reason === "Other, please specify" ? m.custom_reason : m.reason,
+          expiration_date: m.expiration_date
+            ? format(m.expiration_date, "yyyy-MM-dd")
+            : "N/A",
         })),
         attachments: uploadedAttachments,
-        remarks: ticket.remarks,
+        remarks: ticket.remarks || "No remarks filed.",
         customerName: ticket.outlet_name,
       };
 
       if (formData.workflow_type === "For Disposal") {
-        emailNotifierUtil.sendDirectDisposalAlert(commonEmailPayload);
+        emailNotifierUtil.sendDirectDisposalToAccounting(commonEmailPayload);
       } else {
-        emailNotifierUtil.sendReturnToWHAlert(commonEmailPayload);
+        emailNotifierUtil.sendReturnToWHToLogistics(commonEmailPayload);
       }
 
       navigate("/sales/bo/1");
@@ -352,7 +428,6 @@ export default function CreateBadOrderPage() {
                   setFormData((p) => ({ ...p, outlet_name: "", bp_code: "" }));
                   setOutlets([]);
                 } else if (formData.bp_code) {
-                  // Reset key if they clear selection back to typing mode
                   setFormData((p) => ({ ...p, outlet_name: "", bp_code: "" }));
                 }
               }}
@@ -531,37 +606,129 @@ export default function CreateBadOrderPage() {
             )}
           </div>
 
-          {/* Quantity configurations */}
+          {/* Quantity, Expiration Date, and Reason Dynamic Form configurations */}
           {currentItem.item_code && (
-            <div className="grid grid-cols-3 gap-2 bg-background p-2 rounded border border-dashed text-xs items-center transition-all animate-in fade-in duration-200">
-              <div className="col-span-2">
-                <span className="text-[10px] text-muted-foreground block font-mono">
-                  {currentItem.item_code}
-                </span>
-                <span className="font-medium truncate block text-slate-800">
-                  {currentItem.item_description}
-                </span>
+            <div className="space-y-3 bg-background p-3 rounded border border-dashed transition-all animate-in fade-in duration-200">
+              <div className="flex justify-between items-start border-b pb-2">
+                <div>
+                  <span className="text-[10px] text-muted-foreground block font-mono">
+                    {currentItem.item_code}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-800">
+                    {currentItem.item_description}
+                  </span>
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground block">
-                  Filing Qty ({currentItem.uom})
-                </label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={currentItem.request_qty}
-                  onChange={(e) =>
-                    setCurrentItem((p) => ({
-                      ...p,
-                      request_qty: Math.max(
-                        1,
-                        parseInt(e.target.value, 10) || 1,
-                      ),
-                    }))
-                  }
-                  className="h-8 text-center font-bold"
-                />
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Qty field */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase block">
+                    Filing Qty ({currentItem.uom})
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={currentItem.request_qty}
+                    onChange={(e) =>
+                      setCurrentItem((p) => ({
+                        ...p,
+                        request_qty: Math.max(
+                          1,
+                          parseInt(e.target.value, 10) || 1,
+                        ),
+                      }))
+                    }
+                    className="h-9 text-center font-bold text-xs"
+                  />
+                </div>
+
+                {/* Expiration Date picker */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase block">
+                    Expiration Date
+                  </label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant={"outline"}
+                        className={`w-full justify-start text-left font-normal text-xs h-9 ${
+                          !currentItem.expiration_date &&
+                          "text-muted-foreground"
+                        }`}
+                      >
+                        <CalendarIcon className="mr-2 h-3.5 w-3.5 text-slate-400" />
+                        {currentItem.expiration_date ? (
+                          format(currentItem.expiration_date, "PPP")
+                        ) : (
+                          <span>Pick a date</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={currentItem.expiration_date}
+                        onSelect={(date) =>
+                          setCurrentItem((p) => ({
+                            ...p,
+                            expiration_date: date,
+                          }))
+                        }
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Return Reason dropdown selector */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase block">
+                    Reason
+                  </label>
+                  <Select
+                    value={currentItem.reason}
+                    onValueChange={(val) =>
+                      setCurrentItem((p) => ({
+                        ...p,
+                        reason: val,
+                        custom_reason: "",
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="text-xs h-9">
+                      <SelectValue placeholder="Select reason" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REASON_OPTIONS.map((opt) => (
+                        <SelectItem key={opt} value={opt} className="text-xs">
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+
+              {/* Dynamic conditional custom text field anchor */}
+              {currentItem.reason === "Other, please specify" && (
+                <div className="space-y-1 pt-2 border-t border-dashed animate-in slide-in-from-top-1 duration-200">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase block">
+                    Specify Custom Alternate Reason
+                  </label>
+                  <Input
+                    placeholder="Provide specific details regarding the item status..."
+                    value={currentItem.custom_reason || ""}
+                    onChange={(e) =>
+                      setCurrentItem((p) => ({
+                        ...p,
+                        custom_reason: e.target.value,
+                      }))
+                    }
+                    className="h-9 text-xs"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -578,14 +745,17 @@ export default function CreateBadOrderPage() {
 
           {/* Table Memory Ledger */}
           {manifestItems.length > 0 && (
-            <div className="border rounded-md bg-background max-h-40 overflow-y-auto">
+            <div className="border rounded-md bg-background max-h-60 overflow-y-auto">
               <Table>
                 <TableHeader className="bg-slate-50 sticky top-0 z-10">
                   <TableRow>
-                    <TableHead className="p-2 text-xs">SKU</TableHead>
-                    <TableHead className="p-2 text-xs">Description</TableHead>
+                    <TableHead className="p-2 text-xs">SKU / Item</TableHead>
                     <TableHead className="p-2 text-xs text-center">
                       Volume
+                    </TableHead>
+                    <TableHead className="p-2 text-xs">Expiry</TableHead>
+                    <TableHead className="p-2 text-xs">
+                      Reason Details
                     </TableHead>
                     <TableHead className="p-2 w-8" />
                   </TableRow>
@@ -593,14 +763,24 @@ export default function CreateBadOrderPage() {
                 <TableBody>
                   {manifestItems.map((item, idx) => (
                     <TableRow key={idx} className="text-xs">
-                      <TableCell className="p-2 font-mono font-medium">
-                        {item.item_code}
+                      <TableCell className="p-2 font-medium">
+                        <div className="font-mono">{item.item_code}</div>
+                        <div className="text-[10px] text-muted-foreground truncate max-w-[160px]">
+                          {item.item_description}
+                        </div>
                       </TableCell>
-                      <TableCell className="p-2 truncate max-w-[200px] text-muted-foreground">
-                        {item.item_description}
-                      </TableCell>
-                      <TableCell className="p-2 text-center font-bold text-primary">
+                      <TableCell className="p-2 text-center font-bold text-primary whitespace-nowrap">
                         {item.request_qty} {item.uom}
+                      </TableCell>
+                      <TableCell className="p-2 text-muted-foreground font-mono">
+                        {item.expiration_date
+                          ? format(item.expiration_date, "yyyy-MM-dd")
+                          : "—"}
+                      </TableCell>
+                      <TableCell className="p-2 truncate max-w-[150px] font-medium text-slate-700">
+                        {item.reason === "Other, please specify"
+                          ? item.custom_reason
+                          : item.reason}
                       </TableCell>
                       <TableCell className="p-2 text-center">
                         <button
@@ -683,12 +863,12 @@ export default function CreateBadOrderPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => navigate("/bad-orders")}
+            onClick={() => navigate("/sales/bo/1")}
           >
             Cancel
           </Button>
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{" "}
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Request Bad Order
           </Button>
         </div>
