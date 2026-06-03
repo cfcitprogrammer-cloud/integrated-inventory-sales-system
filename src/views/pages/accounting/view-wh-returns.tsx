@@ -21,6 +21,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import RequestTimeline from "@/components/custom/timeline";
+import {
+  emailNotifierUtil,
+  type DisposalRequestPayload,
+} from "@/lib/email-notifier"; // Adjust path as necessary
 import { toast } from "sonner";
 
 export default function AccountingViewReturnWarehousePage() {
@@ -31,7 +35,7 @@ export default function AccountingViewReturnWarehousePage() {
   const [items, setItems] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
 
-  // 💡 Purely tracks the macro-level overall financial valuation
+  // Tracks the macro-level overall financial valuation
   const [totalCost, setTotalCost] = useState<number | "">("");
 
   const [isLoading, setIsLoading] = useState(true);
@@ -56,10 +60,11 @@ export default function AccountingViewReturnWarehousePage() {
     *,
     tbl_employees (
       first_name,
-      last_name
+      last_name,
+      email
     )
   `,
-        ) // ✨ Cleaned up the extra fragments and parentheses here
+        )
         .eq("id", id)
         .single();
 
@@ -94,7 +99,7 @@ export default function AccountingViewReturnWarehousePage() {
 
   useEffect(() => {
     fetchDetailedData();
-  }, [id]);
+  }, [id, refreshNonce]);
 
   // Handle financial currency numeric boundaries securely
   const handleCostChange = (val: string) => {
@@ -106,6 +111,42 @@ export default function AccountingViewReturnWarehousePage() {
     if (!isNaN(parsed) && parsed >= 0) {
       setTotalCost(parsed);
     }
+  };
+
+  // Packages state data into structured utility contract payloads for Apps Script
+  const handleOutboundNotification = () => {
+    const parsedAttachments = attachments.map((a) => ({
+      name: a.file_path.split("/").pop() || "Evidence_Attachment",
+      url: supabase()
+        .storage.from("bad-orders-attachments")
+        .getPublicUrl(a.file_path).data.publicUrl,
+    }));
+
+    const alertPayload: DisposalRequestPayload = {
+      requestId: String(ticket.id),
+      customerName: ticket.outlet_name || "Unknown Outlet",
+      bpCode: ticket.bp_code || "N/A",
+      status: `Accounting Ledger Balanced - Total Valuation PHP ${Number(totalCost).toFixed(2)}`,
+      dateTime: new Date().toISOString(),
+      remarks: ticket.remarks || "",
+      filer: {
+        first_name: ticket.tbl_employees?.first_name || "System",
+        last_name: ticket.tbl_employees?.last_name || "Filer",
+      },
+      items: items.map((i) => ({
+        item_code: i.item_code,
+        item_description: i.item_description,
+        uom: i.uom || "PCS",
+        request_qty: Number(i.request_qty),
+        actual_qty: i.actual_qty !== null ? Number(i.actual_qty) : undefined,
+        expiration_date: i.expiration_date,
+        reason: i.reason,
+      })),
+      attachments: parsedAttachments,
+    };
+
+    // Step 3 Hook: Dispatch alert validation packet upwards to AGM sign-off queue
+    emailNotifierUtil.sendReturnToWHToAGM(alertPayload);
   };
 
   // Accounting Transactional Execution Engine
@@ -126,7 +167,6 @@ export default function AccountingViewReturnWarehousePage() {
         .from("tbl_bo_input")
         .update({
           total_cost: totalCost,
-          // Shift status over if required by your pipeline layout logic rules
         })
         .eq("id", ticket.id);
 
@@ -135,8 +175,6 @@ export default function AccountingViewReturnWarehousePage() {
       // 2. Append updates to the operational lifecycle workflow table
       const workflowPayload = {
         rwh_acc_updated_at: timestampIso,
-        // Optional tracking column hooks:
-        // accounting_status: "COSTED"
       };
 
       const { error: workflowError } = await supabase()
@@ -146,10 +184,11 @@ export default function AccountingViewReturnWarehousePage() {
 
       if (workflowError) throw workflowError;
 
-      // 3. Hot-reload snapshot states
-      await fetchDetailedData();
-      setRefreshNonce((prev) => prev + 1);
+      // 3. Dispatch the outward Apps Script Notification background utility
+      handleOutboundNotification();
 
+      // 4. Hot-reload snapshot states
+      setRefreshNonce((prev) => prev + 1);
       toast.success("Total return valuation metrics logged successfully!");
     } catch (error: any) {
       console.error(
@@ -232,7 +271,7 @@ export default function AccountingViewReturnWarehousePage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
           {/* Metadata Grid */}
-          <div className="grid grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
             <div>
               <span className="text-xs text-muted-foreground block">
                 Customer Outlet Name:
@@ -270,8 +309,9 @@ export default function AccountingViewReturnWarehousePage() {
                 Filer Identity:
               </span>
               <span className="font-semibold text-primary">
-                {ticket.tbl_employees?.last_name},{" "}
-                {ticket.tbl_employees?.first_name}
+                {ticket.tbl_employees
+                  ? `${ticket.tbl_employees.last_name}, ${ticket.tbl_employees.first_name}`
+                  : "System-Generated"}
               </span>
             </div>
           </div>
@@ -329,7 +369,9 @@ export default function AccountingViewReturnWarehousePage() {
                     className="flex items-center gap-2 p-2 border rounded hover:bg-slate-50 text-xs truncate text-slate-600 font-mono transition-colors"
                   >
                     <FileText className="h-4 w-4 text-blue-500 shrink-0" />
-                    <span className="truncate">{a.file_path}</span>
+                    <span className="truncate">
+                      {a.file_path.split("/").pop()}
+                    </span>
                   </a>
                 ))}
               </div>
@@ -393,8 +435,8 @@ export default function AccountingViewReturnWarehousePage() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="font-medium text-muted-foreground">
-                          {item.uom}
+                        <TableCell className="font-medium text-muted-foreground text-center sm:text-left">
+                          {item.uom || "PCS"}
                         </TableCell>
                       </TableRow>
                     );

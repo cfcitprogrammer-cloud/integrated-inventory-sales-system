@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   XCircle,
   Package,
+  Calendar,
+  AlertCircle,
 } from "lucide-react";
 import { supabase } from "@/config/db";
 import { Button } from "@/components/ui/button";
@@ -20,6 +22,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import RequestTimeline from "@/components/custom/timeline";
+import {
+  emailNotifierUtil,
+  type DisposalRequestPayload,
+} from "@/lib/email-notifier";
 import { toast } from "sonner";
 
 export default function AccountingViewDirectDisposalsPage() {
@@ -35,14 +41,15 @@ export default function AccountingViewDirectDisposalsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
-  // 🔒 Disables actions if master ticket status is terminal OR if accounting has already approved
+  // 🔒 Disables actions if master ticket status is terminal OR if accounting has already voted
   const isTerminated =
     ticket?.status === "Approved" ||
     ticket?.status === "Rejected" ||
     ticket?.status === "Closed" ||
-    workflowState?.dd_acc_status === "APPROVED";
+    workflowState?.dd_acc_status === "APPROVED" ||
+    workflowState?.dd_acc_status === "REJECTED";
 
-  // Core Direct Disposal Fetch Engine
+  // Core Direct Disposal Fetch Engine matching schema relations
   async function fetchDetailedData() {
     if (!id) return;
     try {
@@ -50,32 +57,30 @@ export default function AccountingViewDirectDisposalsPage() {
         .from("tbl_bo_input")
         .select(
           `*, tbl_employees (
-                    first_name,
-                    last_name
-                  )
             first_name,
-            last_name
+            last_name,
+            email
           )`,
         )
         .eq("id", id)
         .single();
 
-      // Fetch items manifest
+      // Fetch items manifest directly from tbl_bo_input_items
       const itemsRes = await supabase()
         .from("tbl_bo_input_items")
         .select("*")
         .eq("bo_input_id", id);
 
-      // Fetch accompanying attachments
+      // Fetch accompanying attachments from tbl_bo_attachments
       const attachRes = await supabase()
         .from("tbl_bo_attachments")
         .select("*")
         .eq("bo_input_id", id);
 
-      // Fetch direct workflow row to track accounting execution state
+      // Fetch direct workflow matrix tracking columns from tbl_bo_workflow
       const workflowRes = await supabase()
         .from("tbl_bo_workflow")
-        .select("dd_acc_status")
+        .select("dd_acc_status, dd_agm_status")
         .eq("bo_input_id", id)
         .maybeSingle();
 
@@ -95,32 +100,93 @@ export default function AccountingViewDirectDisposalsPage() {
 
   useEffect(() => {
     fetchDetailedData();
-  }, [id]);
+  }, [id, refreshNonce]);
+
+  // Packages state data into structured utility contract payloads
+  const handleOutboundNotification = (decision: "Approved" | "Rejected") => {
+    if (decision !== "Approved") return;
+
+    // Map public bucket links for file access transparency
+    const parsedAttachments = attachments.map((a) => ({
+      name: a.file_path.split("/").pop() || "Evidence_Attachment",
+      url: supabase()
+        .storage.from("bad-orders-attachments")
+        .getPublicUrl(a.file_path).data.publicUrl,
+    }));
+
+    const alertPayload: DisposalRequestPayload = {
+      requestId: String(ticket.id),
+      customerName: ticket.outlet_name || "Unknown Outlet",
+      bpCode: ticket.bp_code || "N/A",
+      status: "Accounting Approved - Pending AGM Review",
+      dateTime: new Date().toISOString(),
+      remarks: ticket.remarks || "",
+      filer: {
+        first_name: ticket.tbl_employees?.first_name || "System",
+        last_name: ticket.tbl_employees?.last_name || "Filer",
+      },
+      items: items.map((i) => ({
+        item_code: i.item_code,
+        item_description: i.item_description,
+        uom: i.uom || "PCS",
+        request_qty: Number(i.request_qty),
+        expiration_date: i.expiration_date,
+        reason: i.reason,
+      })),
+      attachments: parsedAttachments,
+    };
+
+    // Run structural alert pipeline hand-off to notify your App Script target URL
+    emailNotifierUtil.sendDirectDisposalToAGM(alertPayload);
+  };
 
   // Pure Binary Decision Workflow Processing Engine
   async function handleWorkflowAction(decision: "Approved" | "Rejected") {
     try {
       setIsSubmitting(true);
       const timestampIso = new Date().toISOString();
+      const decisionUpper = decision.toUpperCase();
 
-      const workflowPayload = {
-        dd_acc_status: decision.toUpperCase(),
-        dd_acc_updated_at: timestampIso,
-      };
-
+      // 1. Update tbl_bo_workflow columns explicitly mapped to schema
       const { error: workflowError } = await supabase()
         .from("tbl_bo_workflow")
-        .update(workflowPayload)
+        .update({
+          dd_acc_status: decisionUpper,
+          dd_acc_updated_at: timestampIso,
+        })
         .eq("bo_input_id", ticket.id);
 
       if (workflowError) throw workflowError;
 
-      // Hot-reload context flags to evaluate updated state locks immediately
-      await fetchDetailedData();
-      setRefreshNonce((prev) => prev + 1);
+      // 2. Determine Master Ticket Status using the schema's workflow structure
+      let targetMasterStatus = ticket.status;
 
+      if (decisionUpper === "REJECTED") {
+        targetMasterStatus = "Rejected";
+      } else if (decisionUpper === "APPROVED") {
+        if (workflowState?.dd_agm_status === "APPROVED") {
+          targetMasterStatus = "Approved";
+        } else {
+          targetMasterStatus = "Open"; // Stays Open awaiting total verification tree clearance
+        }
+      }
+
+      const { error: masterError } = await supabase()
+        .from("tbl_bo_input")
+        .update({
+          status: targetMasterStatus,
+        })
+        .eq("id", ticket.id);
+
+      if (masterError) throw masterError;
+
+      // 3. Dispatch the Apps Script Webhook via our integrated utility file
+      handleOutboundNotification(decision);
+
+      // Hot-reload context flags immediately
+      setRefreshNonce((prev) => prev + 1);
       toast.success(
-        `Direct disposal request successfully marked as ${decision}!`,
+        `Direct disposal request successfully marked as ${decision} by Accounting!`,
       );
     } catch (error: any) {
       console.error(
@@ -213,7 +279,7 @@ export default function AccountingViewDirectDisposalsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
           {/* Metadata Grid Info Summary */}
-          <div className="grid grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
             <div>
               <span className="text-xs text-muted-foreground block">
                 Customer Outlet Name:
@@ -236,9 +302,9 @@ export default function AccountingViewDirectDisposalsPage() {
               </span>
               <span
                 className={`text-xs font-bold px-2 py-0.5 rounded inline-block mt-0.5 ${
-                  ticket.status === "Open"
+                  ticket.status === "Approved"
                     ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : ticket.status === "Closed"
+                    : ticket.status === "Rejected" || ticket.status === "Closed"
                       ? "bg-red-50 text-red-700 border border-red-200"
                       : "bg-yellow-50 text-yellow-700 border border-yellow-200"
                 }`}
@@ -251,8 +317,9 @@ export default function AccountingViewDirectDisposalsPage() {
                 Filer Identity:
               </span>
               <span className="font-semibold text-primary">
-                {ticket.tbl_employees?.last_name},{" "}
-                {ticket.tbl_employees?.first_name}
+                {ticket.tbl_employees
+                  ? `${ticket.tbl_employees.last_name}, ${ticket.tbl_employees.first_name}`
+                  : "System-Generated"}
               </span>
             </div>
           </div>
@@ -269,17 +336,18 @@ export default function AccountingViewDirectDisposalsPage() {
                   <TableRow>
                     <TableHead>SKU Item Code</TableHead>
                     <TableHead>Description</TableHead>
+                    <TableHead>Expiration Date</TableHead>
+                    <TableHead>Reason</TableHead>
                     <TableHead className="text-center w-[120px]">
                       Disposal Qty
                     </TableHead>
-                    <TableHead>Unit Type</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {items.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={4}
+                        colSpan={5}
                         className="text-center py-6 text-muted-foreground text-xs"
                       >
                         No items found listed in this disposal request.
@@ -291,20 +359,47 @@ export default function AccountingViewDirectDisposalsPage() {
                         key={item.id}
                         className="text-xs hover:bg-slate-50/50 align-middle"
                       >
-                        <TableCell className="font-mono font-medium">
+                        <TableCell className="font-mono font-medium text-slate-600">
                           {item.item_code}
                         </TableCell>
                         <TableCell
-                          className="max-w-[240px] truncate"
+                          className="max-w-[180px] truncate font-medium text-slate-900"
                           title={item.item_description}
                         >
                           {item.item_description}
                         </TableCell>
-                        <TableCell className="text-center font-bold text-slate-800">
-                          {item.request_qty}
+                        <TableCell className="text-slate-600 font-mono">
+                          {item.expiration_date ? (
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3 text-slate-400" />
+                              {item.expiration_date}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground italic text-[11px]">
+                              No date
+                            </span>
+                          )}
                         </TableCell>
-                        <TableCell className="font-medium text-muted-foreground">
-                          {item.uom}
+                        <TableCell className="font-medium text-slate-600 max-w-[150px] truncate capitalize">
+                          {item.reason ? (
+                            <span
+                              className="flex items-center gap-1"
+                              title={item.reason}
+                            >
+                              <AlertCircle className="h-3 w-3 text-slate-400 shrink-0" />
+                              {item.reason}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground italic text-[11px]">
+                              Unspecified
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center font-bold text-slate-800 whitespace-nowrap">
+                          {item.request_qty}{" "}
+                          <span className="text-[10px] font-normal font-mono text-slate-500 uppercase ml-0.5">
+                            {item.uom || "PCS"}
+                          </span>
                         </TableCell>
                       </TableRow>
                     ))
@@ -334,7 +429,9 @@ export default function AccountingViewDirectDisposalsPage() {
                     className="flex items-center gap-2 p-2 border rounded hover:bg-slate-50 text-xs truncate text-slate-600 font-mono transition-colors"
                   >
                     <FileText className="h-4 w-4 text-blue-500 shrink-0" />
-                    <span className="truncate">{a.file_path}</span>
+                    <span className="truncate">
+                      {a.file_path.split("/").pop() || "Evidence_File"}
+                    </span>
                   </a>
                 ))}
               </div>

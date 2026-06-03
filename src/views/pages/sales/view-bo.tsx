@@ -9,6 +9,8 @@ import {
   ShieldAlert,
   User,
   Hash,
+  Calendar,
+  AlertCircle,
 } from "lucide-react";
 import { supabase } from "@/config/db";
 import { Button } from "@/components/ui/button";
@@ -215,11 +217,14 @@ export default function ViewBadOrderDetailsPage() {
                     <TableHead className="font-semibold text-slate-700">
                       Description
                     </TableHead>
-                    <TableHead className="text-center w-[120px] font-semibold text-slate-700">
-                      Disposal Qty
+                    <TableHead className="font-semibold text-slate-700">
+                      Expiration Date
                     </TableHead>
                     <TableHead className="font-semibold text-slate-700">
-                      Unit Type
+                      Reason
+                    </TableHead>
+                    <TableHead className="text-center w-[120px] font-semibold text-slate-700">
+                      Disposal Qty
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -227,7 +232,7 @@ export default function ViewBadOrderDetailsPage() {
                   {items.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={4}
+                        colSpan={5}
                         className="text-center py-8 text-muted-foreground font-medium"
                       >
                         No items found listed in this disposal request.
@@ -243,16 +248,43 @@ export default function ViewBadOrderDetailsPage() {
                           {item.item_code}
                         </TableCell>
                         <TableCell
-                          className="max-w-[240px] font-medium text-slate-900 truncate"
+                          className="max-w-[180px] font-medium text-slate-900 truncate"
                           title={item.item_description}
                         >
                           {item.item_description}
                         </TableCell>
-                        <TableCell className="text-center font-bold text-slate-800">
-                          {item.request_qty}
+                        <TableCell className="text-slate-600 font-mono">
+                          {item.expiration_date ? (
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3 text-slate-400" />
+                              {item.expiration_date}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground italic text-[11px]">
+                              No date provided
+                            </span>
+                          )}
                         </TableCell>
-                        <TableCell className="font-medium text-slate-500 uppercase font-mono text-[11px]">
-                          {item.uom}
+                        <TableCell className="font-medium text-slate-600 max-w-[150px] truncate capitalize">
+                          {item.reason ? (
+                            <span
+                              className="flex items-center gap-1"
+                              title={item.reason}
+                            >
+                              <AlertCircle className="h-3 w-3 text-slate-400 shrink-0" />
+                              {item.reason}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground italic text-[11px]">
+                              Unspecified
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center font-bold text-slate-800 whitespace-nowrap">
+                          {item.request_qty}{" "}
+                          <span className="text-[10px] font-normal font-mono text-slate-500 uppercase ml-0.5">
+                            {item.uom || "PCS"}
+                          </span>
                         </TableCell>
                       </TableRow>
                     ))

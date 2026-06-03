@@ -20,6 +20,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import RequestTimeline from "@/components/custom/timeline";
+import {
+  emailNotifierUtil,
+  type DisposalRequestPayload,
+} from "@/lib/email-notifier"; // Adjust path as necessary
 import { toast } from "sonner";
 
 interface QuantityState {
@@ -37,8 +41,6 @@ export default function LogisticsViewReturnWarehousePage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingApproval, setIsLoadingApproval] = useState(false);
-
-  // 💡 Added a refresh nonce state to force a clean timeline remount cycle
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
   // Helper flag to check if counts have already been submitted previously
@@ -59,11 +61,9 @@ export default function LogisticsViewReturnWarehousePage() {
         .from("tbl_bo_input")
         .select(
           `*, tbl_employees (
-                    first_name,
-                    last_name
-                  )
             first_name,
-            last_name
+            last_name,
+            email
           )`,
         )
         .eq("id", id)
@@ -103,7 +103,7 @@ export default function LogisticsViewReturnWarehousePage() {
 
   useEffect(() => {
     fetchDetailedData();
-  }, [id]);
+  }, [id, refreshNonce]);
 
   // Handle live numeric changes on the warehouse floor layout
   const handleQtyChange = (itemId: string, val: string) => {
@@ -115,6 +115,42 @@ export default function LogisticsViewReturnWarehousePage() {
     if (!isNaN(parsed) && parsed >= 0) {
       setQuantities((prev) => ({ ...prev, [itemId]: parsed }));
     }
+  };
+
+  // Packages state data into structured utility contract payloads for Apps Script
+  const handleOutboundNotification = (updatedItems: any[]) => {
+    const parsedAttachments = attachments.map((a) => ({
+      name: a.file_path.split("/").pop() || "Evidence_Attachment",
+      url: supabase()
+        .storage.from("bad-orders-attachments")
+        .getPublicUrl(a.file_path).data.publicUrl,
+    }));
+
+    const alertPayload: DisposalRequestPayload = {
+      requestId: String(ticket.id),
+      customerName: ticket.outlet_name || "Unknown Outlet",
+      bpCode: ticket.bp_code || "N/A",
+      status: "Logistics Counted - Awaiting Accounting Verification",
+      dateTime: new Date().toISOString(),
+      remarks: ticket.remarks || "",
+      filer: {
+        first_name: ticket.tbl_employees?.first_name || "System",
+        last_name: ticket.tbl_employees?.last_name || "Filer",
+      },
+      items: updatedItems.map((i) => ({
+        item_code: i.item_code,
+        item_description: i.item_description,
+        uom: i.uom || "PCS",
+        request_qty: Number(i.request_qty),
+        actual_qty: Number(quantities[i.id]),
+        expiration_date: i.expiration_date,
+        reason: i.reason,
+      })),
+      attachments: parsedAttachments,
+    };
+
+    // Step 2 Hook: Forward context to Accounting to manage ledger matching
+    emailNotifierUtil.sendReturnToWHToAccounting(alertPayload);
   };
 
   // Pure Transactional Logistics Execution Engine
@@ -165,14 +201,13 @@ export default function LogisticsViewReturnWarehousePage() {
         const results = await Promise.all(updatePromises);
         const processingError = results.find((res) => res.error);
         if (processingError) throw processingError.error;
+
+        // 4. Dispatch the operational webhook alert to the Accounting Node
+        handleOutboundNotification(items);
       }
 
       // 5. Hot-reload data changes and bump layout key signature flags
-      await fetchDetailedData();
-
-      // 💡 Bumping this counter guarantees that the React element tree flashes its key and forces a re-fetch
       setRefreshNonce((prev) => prev + 1);
-
       toast.success("Logistics counts verified and submitted successfully!");
     } catch (error: any) {
       console.error(
@@ -254,7 +289,7 @@ export default function LogisticsViewReturnWarehousePage() {
       {/* Main Structural Panels Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
             <div>
               <span className="text-xs text-muted-foreground block">
                 Customer Outlet Name:
@@ -292,8 +327,9 @@ export default function LogisticsViewReturnWarehousePage() {
                 Requested By:
               </span>
               <span className="font-semibold text-primary">
-                {ticket.tbl_employees.last_name},{" "}
-                {ticket.tbl_employees.first_name}
+                {ticket.tbl_employees
+                  ? `${ticket.tbl_employees.last_name}, ${ticket.tbl_employees.first_name}`
+                  : "System Filer"}
               </span>
             </div>
           </div>
@@ -317,7 +353,9 @@ export default function LogisticsViewReturnWarehousePage() {
                     className="flex items-center gap-2 p-2 border rounded hover:bg-slate-50 text-xs truncate text-slate-600 font-mono transition-colors"
                   >
                     <FileText className="h-4 w-4 text-blue-500 shrink-0" />
-                    <span className="truncate">{a.file_path}</span>
+                    <span className="truncate">
+                      {a.file_path.split("/").pop()}
+                    </span>
                   </a>
                 ))}
               </div>
@@ -395,8 +433,8 @@ export default function LogisticsViewReturnWarehousePage() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="font-medium text-muted-foreground">
-                          {item.uom}
+                        <TableCell className="font-medium text-muted-foreground text-center sm:text-left">
+                          {item.uom || "PCS"}
                         </TableCell>
                       </TableRow>
                     );
@@ -417,7 +455,9 @@ export default function LogisticsViewReturnWarehousePage() {
             </div>
           )}
 
-          <p className="text-xs">Reference ID: {ticket.id}</p>
+          <p className="text-xs text-muted-foreground">
+            Reference ID: {ticket.id}
+          </p>
         </div>
 
         {/* Real-Time Processing Sequence Timeline Sidebar */}

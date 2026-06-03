@@ -15,14 +15,11 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { emailNotifierUtil } from "@/lib/email-notifier";
-
-interface NewItemRow {
-  item_code: string;
-  item_description: string;
-  request_qty: number;
-  uom: string;
-}
+import {
+  emailNotifierUtil,
+  type DisposalItem,
+  type DisposalRequestPayload,
+} from "@/lib/email-notifier";
 
 interface ExtensionProductVariant {
   sku: string;
@@ -34,6 +31,14 @@ interface ExtensionProductVariant {
     category: string | null;
   };
 }
+
+const REASON_OPTIONS = [
+  "rat bite",
+  "deflated",
+  "expired",
+  "packaging issue",
+  "others, please specify",
+];
 
 export default function CreateBadOrderPage() {
   const navigate = useNavigate();
@@ -70,13 +75,18 @@ export default function CreateBadOrderPage() {
   });
 
   // --- Manifest Ledger Arrays ---
-  const [manifestItems, setManifestItems] = useState<NewItemRow[]>([]);
-  const [currentItem, setCurrentItem] = useState<NewItemRow>({
+  const [manifestItems, setManifestItems] = useState<DisposalItem[]>([]);
+  const [currentItem, setCurrentItem] = useState<DisposalItem>({
     item_code: "",
     item_description: "",
-    request_qty: 1,
     uom: "PCS",
+    request_qty: 1,
+    expiration_date: null,
+    reason: "",
   });
+
+  // State tracking specific custom reason if 'others' is picked
+  const [customReason, setCustomReason] = useState("");
   const [files, setFiles] = useState<File[]>([]);
 
   useEffect(() => {
@@ -84,7 +94,7 @@ export default function CreateBadOrderPage() {
       toast.error(
         "No active business entity selected. Returning to dashboard.",
       );
-      navigate("/bad-orders");
+      navigate("/d/sales/bo/1");
     }
   }, [currentCompanyId, navigate]);
 
@@ -184,16 +194,33 @@ export default function CreateBadOrderPage() {
         "Filing volume vectors must be greater than zero units.",
       );
     }
+    if (!currentItem.reason) {
+      return toast.error("Please specify a reason for this bad order item.");
+    }
 
-    setManifestItems((p) => [...p, currentItem]);
+    // Finalize reason calculation if using specified alternative string
+    const finalizedReason =
+      currentItem.reason === "others, please specify"
+        ? customReason.trim() || "Other Reason"
+        : currentItem.reason;
+
+    const completedItemPayload: DisposalItem = {
+      ...currentItem,
+      reason: finalizedReason,
+    };
+
+    setManifestItems((p) => [...p, completedItemPayload]);
 
     // Clean states for the next item lookup entry
     setCurrentItem({
       item_code: "",
       item_description: "",
-      request_qty: 1,
       uom: "PCS",
+      request_qty: 1,
+      expiration_date: null,
+      reason: "",
     });
+    setCustomReason("");
     setSkuSearch("");
   };
 
@@ -278,31 +305,36 @@ export default function CreateBadOrderPage() {
 
       toast.success("Bad Order requested successfully.");
 
-      const commonEmailPayload = {
+      // Split metadata to safety parameters for the explicit model structure
+      const userMetaName = user.user_metadata?.full_name || "System Operator";
+      const nameParts = userMetaName.trim().split(" ");
+      const firstName = nameParts[0] || "System";
+      const lastName = nameParts.slice(1).join(" ") || "Operator";
+
+      // 4. Construct complete operational payload strictly adhering to DisposalRequestPayload
+      const operationalPayload: DisposalRequestPayload = {
         requestId: String(ticket.id),
-        submittedBy:
-          user.user_metadata?.full_name || user.email || "System Operator",
-        department: "Logistics/Warehouse Operations",
-        dateTime: new Date(ticket.created_at || Date.now()).toLocaleString(),
-        warehouseLocation: "Central Sorting Hub",
-        items: manifestItems.map((m) => ({
-          sku: m.item_code,
-          description: m.item_description,
-          uom: m.uom,
-          qty: Number(m.request_qty),
-        })),
-        attachments: uploadedAttachments,
-        remarks: ticket.remarks,
         customerName: ticket.outlet_name,
+        bpCode: ticket.bp_code,
+        status: ticket.status || "Open",
+        dateTime: new Date(ticket.created_at || Date.now()).toLocaleString(),
+        remarks: ticket.remarks || "No remarks filed.",
+        filer: {
+          first_name: firstName,
+          last_name: lastName,
+        },
+        items: manifestItems,
+        attachments: uploadedAttachments,
       };
 
+      // Target explicit initial workflow entry methods matching your model execution definitions
       if (formData.workflow_type === "For Disposal") {
-        emailNotifierUtil.sendDirectDisposalAlert(commonEmailPayload);
+        emailNotifierUtil.sendDirectDisposalToAccounting(operationalPayload);
       } else {
-        emailNotifierUtil.sendReturnToWHAlert(commonEmailPayload);
+        emailNotifierUtil.sendReturnToWHToLogistics(operationalPayload);
       }
 
-      navigate("/sales/bo/1");
+      navigate("/d/sales/bo/1");
     } catch (err: any) {
       toast.error(
         err.message ||
@@ -344,7 +376,6 @@ export default function CreateBadOrderPage() {
                   setFormData((p) => ({ ...p, outlet_name: "", bp_code: "" }));
                   setOutlets([]);
                 } else if (formData.bp_code) {
-                  // Reset key if they clear selection back to typing mode
                   setFormData((p) => ({ ...p, outlet_name: "", bp_code: "" }));
                 }
               }}
@@ -523,37 +554,100 @@ export default function CreateBadOrderPage() {
             )}
           </div>
 
-          {/* Quantity configurations */}
+          {/* Configuration Grid for Selected SKU */}
           {currentItem.item_code && (
-            <div className="grid grid-cols-3 gap-2 bg-background p-2 rounded border border-dashed text-xs items-center transition-all animate-in fade-in duration-200">
-              <div className="col-span-2">
+            <div className="space-y-3 bg-background p-3 rounded border border-dashed transition-all animate-in fade-in duration-200">
+              <div>
                 <span className="text-[10px] text-muted-foreground block font-mono">
                   {currentItem.item_code}
                 </span>
-                <span className="font-medium truncate block text-slate-800">
+                <span className="font-semibold text-xs text-slate-800">
                   {currentItem.item_description}
                 </span>
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground block">
-                  Filing Qty ({currentItem.uom})
-                </label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={currentItem.request_qty}
-                  onChange={(e) =>
-                    setCurrentItem((p) => ({
-                      ...p,
-                      request_qty: Math.max(
-                        1,
-                        parseInt(e.target.value, 10) || 1,
-                      ),
-                    }))
-                  }
-                  className="h-8 text-center font-bold"
-                />
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                {/* 1. Request Quantity */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 block">
+                    Filing Qty ({currentItem.uom})
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={currentItem.request_qty}
+                    onChange={(e) =>
+                      setCurrentItem((p) => ({
+                        ...p,
+                        request_qty: Math.max(
+                          1,
+                          parseInt(e.target.value, 10) || 1,
+                        ),
+                      }))
+                    }
+                    className="h-8 font-bold"
+                  />
+                </div>
+
+                {/* 2. Expiration Date */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 block">
+                    Expiration Date
+                  </label>
+                  <Input
+                    type="date"
+                    value={currentItem.expiration_date || ""}
+                    onChange={(e) =>
+                      setCurrentItem((p) => ({
+                        ...p,
+                        expiration_date: e.target.value || null,
+                      }))
+                    }
+                    className="h-8 text-slate-700"
+                  />
+                </div>
+
+                {/* 3. Reason Dropdown */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 block">
+                    Reason for Bad Order
+                  </label>
+                  <select
+                    value={currentItem.reason || ""}
+                    onChange={(e) =>
+                      setCurrentItem((p) => ({
+                        ...p,
+                        reason: e.target.value,
+                      }))
+                    }
+                    className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="" disabled>
+                      Select a reason...
+                    </option>
+                    {REASON_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+
+              {/* Dynamic Sub-input if "others, please specify" is caught */}
+              {currentItem.reason === "others, please specify" && (
+                <div className="space-y-1 pt-1 border-t border-slate-100 transition-all animate-in slide-in-from-top-1 duration-150">
+                  <label className="text-[10px] font-medium text-amber-700 block">
+                    Please Specify Custom Reason
+                  </label>
+                  <Input
+                    placeholder="Describe issue (e.g. Water logged / Factory seal breakdown)"
+                    value={customReason}
+                    onChange={(e) => setCustomReason(e.target.value)}
+                    className="h-8 border-amber-300 focus-visible:ring-amber-500 text-xs"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -570,12 +664,15 @@ export default function CreateBadOrderPage() {
 
           {/* Table Memory Ledger */}
           {manifestItems.length > 0 && (
-            <div className="border rounded-md bg-background max-h-40 overflow-y-auto">
+            <div className="border rounded-md bg-background max-h-56 overflow-y-auto">
               <Table>
                 <TableHeader className="bg-slate-50 sticky top-0 z-10">
                   <TableRow>
-                    <TableHead className="p-2 text-xs">SKU</TableHead>
-                    <TableHead className="p-2 text-xs">Description</TableHead>
+                    <TableHead className="p-2 text-xs">
+                      SKU/Description
+                    </TableHead>
+                    <TableHead className="p-2 text-xs">Expiry</TableHead>
+                    <TableHead className="p-2 text-xs">Reason</TableHead>
                     <TableHead className="p-2 text-xs text-center">
                       Volume
                     </TableHead>
@@ -585,13 +682,21 @@ export default function CreateBadOrderPage() {
                 <TableBody>
                   {manifestItems.map((item, idx) => (
                     <TableRow key={idx} className="text-xs">
-                      <TableCell className="p-2 font-mono font-medium">
-                        {item.item_code}
+                      <TableCell className="p-2">
+                        <div className="font-mono font-medium">
+                          {item.item_code}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground truncate max-w-[160px]">
+                          {item.item_description}
+                        </div>
                       </TableCell>
-                      <TableCell className="p-2 truncate max-w-[200px] text-muted-foreground">
-                        {item.item_description}
+                      <TableCell className="p-2 font-mono text-slate-600">
+                        {item.expiration_date ? item.expiration_date : "—"}
                       </TableCell>
-                      <TableCell className="p-2 text-center font-bold text-primary">
+                      <TableCell className="p-2 capitalize text-slate-600 max-w-[140px] truncate">
+                        {item.reason}
+                      </TableCell>
+                      <TableCell className="p-2 text-center font-bold text-primary whitespace-nowrap">
                         {item.request_qty} {item.uom}
                       </TableCell>
                       <TableCell className="p-2 text-center">
@@ -675,12 +780,12 @@ export default function CreateBadOrderPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => navigate("/bad-orders")}
+            onClick={() => navigate("d/sales/bo/1")}
           >
             Cancel
           </Button>
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{" "}
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Request Bad Order
           </Button>
         </div>

@@ -1,12 +1,14 @@
 import { WEBAPP_GAS_URL } from "@/config/links";
 import axios from "axios";
 
-// 1. Define strict interfaces for your data structure
+// --- Operational Structural Models ---
 export interface DisposalItem {
-  sku: string;
-  description: string;
+  item_code: string;
+  item_description: string;
   uom: string;
-  qty: number;
+  request_qty: number;
+  expiration_date?: string | null;
+  reason?: string | null;
 }
 
 export interface SupabaseAttachment {
@@ -16,51 +18,82 @@ export interface SupabaseAttachment {
 
 export interface DisposalRequestPayload {
   requestId: string;
-  submittedBy: string;
-  department: string;
+  customerName: string;
+  bpCode: string;
+  status: string;
   dateTime: string;
-  warehouseLocation: string;
+  remarks: string;
+  filer: {
+    first_name: string;
+    last_name: string;
+  };
   items: DisposalItem[];
   attachments: SupabaseAttachment[];
-  remarks: string;
-  customerName: string;
 }
 
-// 2. Define the payload shape that Apps Script expects
+// Map clean actions expected by your central script processor
+type WorkflowAction =
+  // Direct Disposal Pipeline
+  | "DIRECT_DISPOSAL_ALERT_ACCOUNTING"
+  | "DIRECT_DISPOSAL_APPROVED_ALERT_AGM"
+  // Return to Warehouse Pipeline
+  | "RETURN_WH_ALERT_LOGISTICS"
+  | "RETURN_WH_COUNTED_ALERT_ACCOUNTING"
+  | "RETURN_WH_APPROVED_ALERT_AGM";
+
 interface WebhookPayload extends DisposalRequestPayload {
-  action: "NEW_DISPOSAL_REQUEST" | "NEW_RETURN_WH_REQUEST";
+  action: WorkflowAction;
 }
+
+// Fire-and-forget background post processor
+const dispatchAlert = (
+  action: WorkflowAction,
+  data: DisposalRequestPayload,
+): void => {
+  const payload: WebhookPayload = {
+    action,
+    ...data,
+  };
+
+  axios.post(WEBAPP_GAS_URL, JSON.stringify(payload)).catch((error) => {
+    console.error(
+      `Background Notification Dispatch Failed [${action}]:`,
+      error,
+    );
+  });
+};
 
 export const emailNotifierUtil = {
-  /**
-   * Fires a Bad Order Request disposal notification asynchronously.
-   * Execution completes instantly without waiting for Google Apps Script to reply.
-   */
-  sendDirectDisposalAlert: (data: DisposalRequestPayload): void => {
-    const payload: WebhookPayload = {
-      action: "NEW_DISPOSAL_REQUEST",
-      ...data,
-    };
+  // ==========================================
+  // DIRECT DISPOSAL WORKFLOW HOOKS
+  // ==========================================
 
-    // 🚀 FIRE-AND-FORGET: Trigger axios post immediately.
-    // We don't return this promise, nor do we await it.
-    axios.post(WEBAPP_GAS_URL, JSON.stringify(payload)).catch((error) => {
-      // Caught silently in the background
-      console.error("Background Notification Dispatch Failed:", error);
-    });
+  /** Step 1: Fire when field user submits a Direct Disposal request */
+  sendDirectDisposalToAccounting: (data: DisposalRequestPayload): void => {
+    dispatchAlert("DIRECT_DISPOSAL_ALERT_ACCOUNTING", data);
   },
 
-  sendReturnToWHAlert: (data: DisposalRequestPayload): void => {
-    const payload: WebhookPayload = {
-      action: "NEW_RETURN_WH_REQUEST",
-      ...data,
-    };
+  /** Step 2: Fire when Accounting reviews and approves the Direct Disposal request */
+  sendDirectDisposalToAGM: (data: DisposalRequestPayload): void => {
+    dispatchAlert("DIRECT_DISPOSAL_APPROVED_ALERT_AGM", data);
+  },
 
-    // 🚀 FIRE-AND-FORGET: Trigger axios post immediately.
-    // We don't return this promise, nor do we await it.
-    axios.post(WEBAPP_GAS_URL, JSON.stringify(payload)).catch((error) => {
-      // Caught silently in the background
-      console.error("Background Notification Dispatch Failed:", error);
-    });
+  // ==========================================
+  // RETURN TO WAREHOUSE WORKFLOW HOOKS
+  // ==========================================
+
+  /** Step 1: Fire when field user logs a Return to Warehouse request */
+  sendReturnToWHToLogistics: (data: DisposalRequestPayload): void => {
+    dispatchAlert("RETURN_WH_ALERT_LOGISTICS", data);
+  },
+
+  /** Step 2: Fire once Logistics completes the variance count confirmation */
+  sendReturnToWHToAccounting: (data: DisposalRequestPayload): void => {
+    dispatchAlert("RETURN_WH_COUNTED_ALERT_ACCOUNTING", data);
+  },
+
+  /** Step 3: Fire once Accounting clears and confirms the ledger balancing */
+  sendReturnToWHToAGM: (data: DisposalRequestPayload): void => {
+    dispatchAlert("RETURN_WH_APPROVED_ALERT_AGM", data);
   },
 };
