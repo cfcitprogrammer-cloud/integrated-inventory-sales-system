@@ -142,7 +142,7 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
       title: "Accounting Processing",
       description:
         accState === "completed"
-          ? "Cleared by Accounting. Details emailed to AGM for approval."
+          ? "Cleared by Accounting. Details emailed to GL for approval."
           : "Pending ledger validation and structural disposal clearance.",
       timestamp: formatDate(data.dd_acc_updated_at),
       statusState: accState,
@@ -158,7 +158,7 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
     }
 
     milestones.push({
-      title: "AGM Final Approval",
+      title: "GL Final Approval",
       description:
         "Final authorization execution signature for disposal manifest destruction.",
       timestamp: formatDate(data.dd_agm_updated_at),
@@ -191,7 +191,7 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
       title: "Accounting Pricing Approval",
       description:
         accState === "completed"
-          ? "Pricing approved. Forwarded to AGM desk for final executive validation."
+          ? "Pricing approved. Forwarded to GL desk for final executive validation."
           : "Calculating cost variances and generating item valuation reports.",
       timestamp: formatDate(data.rwh_acc_updated_at),
       statusState: accState,
@@ -206,7 +206,7 @@ export default function RequestTimeline({ badOrderId }: RequestTimelineProps) {
     }
 
     milestones.push({
-      title: "AGM Final Approval",
+      title: "GL Final Approval",
       description:
         "Final operational signature to reconcile and close current return pipeline.",
       timestamp: formatDate(data.rwh_agm_updated_at),

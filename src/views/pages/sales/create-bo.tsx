@@ -2,7 +2,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Trash2, Loader2, FileUp, X, Search } from "lucide-react";
+import {
+  Trash2,
+  Loader2,
+  FileUp,
+  X,
+  Search,
+  AlertTriangleIcon,
+} from "lucide-react";
 import { supabase, supabaseClients } from "@/config/db";
 
 import {
@@ -20,6 +27,7 @@ import {
   type DisposalItem,
   type DisposalRequestPayload,
 } from "@/lib/email-notifier";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface ExtensionProductVariant {
   sku: string;
@@ -33,10 +41,19 @@ interface ExtensionProductVariant {
 }
 
 const REASON_OPTIONS = [
-  "rat bite",
-  "deflated",
-  "expired",
-  "packaging issue",
+  "rat bite (nakagat ng daga)",
+  "deflated (lumambot)",
+  "expired (expired na)",
+  "packaging issue (may problema sa packaging)",
+  "damaged item (sirang produkto)",
+  "nearly expired (in 3 months)",
+  "wet (basa)",
+  "punctured (nabutas)",
+  "wrinkled (kulubot)",
+  "folded (natupi)",
+  "makunat",
+  "durog",
+  "polybag damage (sira ang polybag)",
   "others, please specify",
 ];
 
@@ -362,7 +379,7 @@ export default function CreateBadOrderPage() {
         {/* --- CUSTOMER OUTLET AUTOCOMPLETE --- */}
         <div ref={outletRef} className="space-y-1 relative">
           <label className="text-xs font-semibold text-slate-700">
-            Outlet Name
+            Customer Name
           </label>
           <div className="relative">
             <Input
@@ -455,7 +472,7 @@ export default function CreateBadOrderPage() {
               }`}
             >
               <div className="text-xs font-bold text-blue-600">
-                Return to Stock
+                Return to Warehouse
               </div>
               <p className="text-[10px] text-muted-foreground">
                 Routes to Logistics counting validation first.
@@ -760,6 +777,15 @@ export default function CreateBadOrderPage() {
             </div>
           )}
         </div>
+
+        <Alert className="max-w-full border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
+          <AlertTriangleIcon />
+          <AlertTitle>Mahalagang Paalala</AlertTitle>
+          <AlertDescription>
+            Maaring mag-attach ng Validation Form at Proof of Disposal na may
+            kumpleto at tamang detalye.
+          </AlertDescription>
+        </Alert>
 
         {/* --- FORM GENERAL REMARKS --- */}
         <div className="space-y-1">

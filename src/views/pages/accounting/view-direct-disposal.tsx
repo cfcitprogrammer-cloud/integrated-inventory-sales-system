@@ -118,7 +118,7 @@ export default function AccountingViewDirectDisposalsPage() {
       requestId: String(ticket.id),
       customerName: ticket.outlet_name || "Unknown Outlet",
       bpCode: ticket.bp_code || "N/A",
-      status: "Accounting Approved - Pending AGM Review",
+      status: "Accounting Approved - Pending GL Review",
       dateTime: new Date().toISOString(),
       remarks: ticket.remarks || "",
       filer: {

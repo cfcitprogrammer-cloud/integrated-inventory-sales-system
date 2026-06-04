@@ -145,7 +145,7 @@ export default function AccountingViewReturnWarehousePage() {
       attachments: parsedAttachments,
     };
 
-    // Step 3 Hook: Dispatch alert validation packet upwards to AGM sign-off queue
+    // Step 3 Hook: Dispatch alert validation packet upwards to GL sign-off queue
     emailNotifierUtil.sendReturnToWHToAGM(alertPayload);
   };
 
