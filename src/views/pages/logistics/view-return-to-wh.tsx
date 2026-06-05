@@ -23,11 +23,23 @@ import RequestTimeline from "@/components/custom/timeline";
 import {
   emailNotifierUtil,
   type DisposalRequestPayload,
-} from "@/lib/email-notifier"; // Adjust path as necessary
+} from "@/lib/email-notifier";
 import { toast } from "sonner";
 
 interface QuantityState {
   [itemId: string]: number | "";
+}
+
+interface UomState {
+  [itemId: string]: string;
+}
+
+interface RgsState {
+  [itemId: string]: number | "";
+}
+
+interface RemarksState {
+  [itemId: string]: string;
 }
 
 export default function LogisticsViewReturnWarehousePage() {
@@ -37,7 +49,12 @@ export default function LogisticsViewReturnWarehousePage() {
   const [ticket, setTicket] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
+
+  // --- Item-Level Logistics States ---
   const [quantities, setQuantities] = useState<QuantityState>({});
+  const [uoms, setUoms] = useState<UomState>({});
+  const [rgsNumbers, setRgsNumbers] = useState<RgsState>({});
+  const [logisticsRemarks, setLogisticsRemarks] = useState<RemarksState>({});
 
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingApproval, setIsLoadingApproval] = useState(false);
@@ -57,6 +74,7 @@ export default function LogisticsViewReturnWarehousePage() {
   async function fetchDetailedData() {
     if (!id) return;
     try {
+      setIsLoading(true);
       const ticketRes = await supabase()
         .from("tbl_bo_input")
         .select(
@@ -80,17 +98,28 @@ export default function LogisticsViewReturnWarehousePage() {
         .eq("bo_input_id", id);
 
       const fetchedItems = itemsRes.data || [];
-      setTicket(ticketRes.data);
+      setTicket(ticketRes.data || null);
       setItems(fetchedItems);
       setAttachments(attachRes.data || []);
 
-      // Build initial dynamic quantities layout from current database snapshot
+      // Build dynamic row states directly from the sub-item records array
       const initialQuantities: QuantityState = {};
+      const initialUoms: UomState = {};
+      const initialRgs: RgsState = {};
+      const initialRemarks: RemarksState = {};
+
       fetchedItems.forEach((item) => {
         initialQuantities[item.id] =
           item.actual_qty !== null ? item.actual_qty : item.request_qty;
+        initialUoms[item.id] = item.uom || "PCS";
+        initialRgs[item.id] = item.rgs_number !== null ? item.rgs_number : "";
+        initialRemarks[item.id] = item.logistics_remarks || "";
       });
+
       setQuantities(initialQuantities);
+      setUoms(initialUoms);
+      setRgsNumbers(initialRgs);
+      setLogisticsRemarks(initialRemarks);
     } catch (err) {
       console.error(
         "Failed loading warehouse logistics manifest matrix data hooks",
@@ -117,6 +146,28 @@ export default function LogisticsViewReturnWarehousePage() {
     }
   };
 
+  // Handle specific row RGS number typing variants
+  const handleRgsChange = (itemId: string, val: string) => {
+    if (val === "") {
+      setRgsNumbers((prev) => ({ ...prev, [itemId]: "" }));
+      return;
+    }
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed)) {
+      setRgsNumbers((prev) => ({ ...prev, [itemId]: parsed }));
+    }
+  };
+
+  // Handle localized notes modifications
+  const handleRemarksChange = (itemId: string, val: string) => {
+    setLogisticsRemarks((prev) => ({ ...prev, [itemId]: val }));
+  };
+
+  // Handle selected standard scale configurations
+  const handleUomChange = (itemId: string, val: string) => {
+    setUoms((prev) => ({ ...prev, [itemId]: val }));
+  };
+
   // Packages state data into structured utility contract payloads for Apps Script
   const handleOutboundNotification = (updatedItems: any[]) => {
     const parsedAttachments = attachments.map((a) => ({
@@ -140,16 +191,18 @@ export default function LogisticsViewReturnWarehousePage() {
       items: updatedItems.map((i) => ({
         item_code: i.item_code,
         item_description: i.item_description,
-        uom: i.uom || "PCS",
+        uom: uoms[i.id] || i.uom || "PCS",
         request_qty: Number(i.request_qty),
         actual_qty: Number(quantities[i.id]),
         expiration_date: i.expiration_date,
         reason: i.reason,
+        // Forward row details down the outbound communications node payload
+        rgs_number: rgsNumbers[i.id] || "N/A",
+        logistics_remarks: logisticsRemarks[i.id] || "None",
       })),
       attachments: parsedAttachments,
     };
 
-    // Step 2 Hook: Forward context to Accounting to manage ledger matching
     emailNotifierUtil.sendReturnToWHToAccounting(alertPayload);
   };
 
@@ -159,20 +212,26 @@ export default function LogisticsViewReturnWarehousePage() {
       setIsLoadingApproval(true);
       const timestampIso = new Date().toISOString();
 
-      // 1. Validate that all inputs have values filled out before processing an approval
+      // Validate that all interactive parameters contain integers prior to locking configurations
       if (actionType === "APPROVE") {
-        const hasMissingFields = items.some(
-          (item) => quantities[item.id] === "",
-        );
-        if (hasMissingFields) {
+        const hasMissingQty = items.some((item) => quantities[item.id] === "");
+        const hasMissingRgs = items.some((item) => rgsNumbers[item.id] === "");
+
+        if (hasMissingQty) {
           toast.error(
-            "Logistics processing fault: Please ensure all verified volume inputs are valid integers before submission.",
+            "Validation Error: Please verify all lines have checked quantity dimensions filled.",
+          );
+          return;
+        }
+        if (hasMissingRgs) {
+          toast.error(
+            "Validation Error: Every checked row requires an active RGS slip assignment number.",
           );
           return;
         }
       }
 
-      // 2. Prepare dynamic payload tracking injections matching Logistics metrics schema rule sets
+      // 1. Update status timeline checkpoints within the global flow engine
       const workflowPayload = {
         rwh_logistic_updated_at: timestampIso,
         ...(actionType === "REJECTED" && {
@@ -181,7 +240,6 @@ export default function LogisticsViewReturnWarehousePage() {
         }),
       };
 
-      // Update workflow sequence records directly
       const { error: workflowError } = await supabase()
         .from("tbl_bo_workflow")
         .update(workflowPayload)
@@ -189,12 +247,18 @@ export default function LogisticsViewReturnWarehousePage() {
 
       if (workflowError) throw workflowError;
 
-      // 3. Update actual inventory line counts on the database if approved
+      // 2. Perform parallel row adjustments to the items tracking tables matrix
       if (actionType === "APPROVE") {
         const updatePromises = items.map((item) =>
           supabase()
             .from("tbl_bo_input_items")
-            .update({ actual_qty: quantities[item.id] })
+            .update({
+              actual_qty: quantities[item.id],
+              uom: uoms[item.id],
+              rgs_number:
+                rgsNumbers[item.id] !== "" ? Number(rgsNumbers[item.id]) : null,
+              logistics_remarks: logisticsRemarks[item.id].trim() || null,
+            })
             .eq("id", item.id),
         );
 
@@ -202,13 +266,12 @@ export default function LogisticsViewReturnWarehousePage() {
         const processingError = results.find((res) => res.error);
         if (processingError) throw processingError.error;
 
-        // 4. Dispatch the operational webhook alert to the Accounting Node
+        // Dispatch notifications downstream to Accounting nodes
         handleOutboundNotification(items);
       }
 
-      // 5. Hot-reload data changes and bump layout key signature flags
       setRefreshNonce((prev) => prev + 1);
-      toast.success("Logistics counts verified and submitted successfully!");
+      toast.success("Logistics items updated and verified successfully!");
     } catch (error: any) {
       console.error(
         "Critical error processing logistics workflow optimization rules:",
@@ -220,7 +283,8 @@ export default function LogisticsViewReturnWarehousePage() {
     }
   }
 
-  if (isLoading) {
+  // Guard Clause #1: Wait until loading sequence clears AND ticket state finishes initialization
+  if (isLoading || !ticket) {
     return (
       <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -229,22 +293,9 @@ export default function LogisticsViewReturnWarehousePage() {
     );
   }
 
-  if (!ticket) {
-    return (
-      <div className="p-6 text-center space-y-2">
-        <p className="text-sm text-muted-foreground">
-          Target RWH document metadata missing or deleted context error.
-        </p>
-        <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Back
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
+      {/* Dynamic Action Controls Layout */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -261,12 +312,11 @@ export default function LogisticsViewReturnWarehousePage() {
             </h1>
           </div>
           <p className="text-xs text-muted-foreground pl-9">
-            Logistics intake counting, physical item verification, and tracking
+            Logistics intake counting, physical row verification, and tracking
             timeline.
           </p>
         </div>
 
-        {/* Action Button Controls Module */}
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
           <Button
             size="sm"
@@ -286,7 +336,7 @@ export default function LogisticsViewReturnWarehousePage() {
         </div>
       </div>
 
-      {/* Main Structural Panels Layout */}
+      {/* Main Structural Interface Panels */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border p-4 bg-slate-50/50 rounded-xl text-sm">
@@ -362,7 +412,7 @@ export default function LogisticsViewReturnWarehousePage() {
             </div>
           )}
 
-          {/* Logistics Interactive Verification Manifest */}
+          {/* Table Container Segment */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
@@ -371,22 +421,25 @@ export default function LogisticsViewReturnWarehousePage() {
               <span className="text-[11px] text-muted-foreground bg-slate-100 px-2 py-0.5 rounded">
                 {isAlreadySubmitted || ticket.status === "Closed"
                   ? "Manifest submission finalized. Input values locked."
-                  : "Edit right-hand column values below to update dock arrival volumes"}
+                  : "Edit line inputs below to modify warehouse floor arrival variables"}
               </span>
             </div>
             <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>SKU Item Code</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-center w-[140px]">
-                      Requested Qty
+                    <TableHead className="text-xs">
+                      SKU / Item Description
                     </TableHead>
-                    <TableHead className="text-center w-[160px] bg-slate-50/50">
-                      Returned Qty
+                    <TableHead className="w-[110px]">Reason</TableHead>
+                    <TableHead className="text-center w-[70px]">
+                      Req Qty
                     </TableHead>
-                    <TableHead>Unit Type</TableHead>
+                    <TableHead className="text-center w-[100px] bg-slate-50/50">
+                      Ret Qty
+                    </TableHead>
+                    <TableHead className="w-[110px]">RGS #</TableHead>
+                    <TableHead className="w-[160px]">Logistics Notes</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -399,23 +452,28 @@ export default function LogisticsViewReturnWarehousePage() {
                         key={item.id}
                         className="text-xs hover:bg-slate-50/50 align-middle"
                       >
-                        <TableCell className="font-mono font-medium">
-                          {item.item_code}
+                        <TableCell>
+                          <span className="font-mono font-medium block text-slate-900">
+                            {item.item_code}
+                          </span>
+                          <span
+                            className="text-muted-foreground block max-w-[160px] truncate"
+                            title={item.item_description}
+                          >
+                            {item.item_description}
+                          </span>
                         </TableCell>
-                        <TableCell
-                          className="max-w-[200px] truncate"
-                          title={item.item_description}
-                        >
-                          {item.item_description}
-                        </TableCell>
+                        <TableCell className="p-1">{item.reason}</TableCell>
                         <TableCell className="text-center font-medium text-slate-700">
                           {item.request_qty}
                         </TableCell>
-                        <TableCell className="bg-slate-50/30 p-2">
-                          <div className="flex items-center justify-center gap-1.5 max-w-[150px] mx-auto">
+
+                        {/* 1. Returned Floor Qty Entry */}
+                        <TableCell className="bg-slate-50/30 p-1">
+                          <div className="flex items-center justify-center gap-1 max-w-[85px] mx-auto">
                             <Input
                               type="number"
-                              className="h-8 text-xs font-semibold text-center w-[100px] bg-white"
+                              className="h-8 text-xs text-center bg-white p-1"
                               disabled={
                                 isLoadingApproval ||
                                 isTerminated ||
@@ -425,16 +483,47 @@ export default function LogisticsViewReturnWarehousePage() {
                               onChange={(e) =>
                                 handleQtyChange(item.id, e.target.value)
                               }
-                              placeholder="Enter quantity"
                               min={0}
                             />
                             {isDiscrepancy && (
-                              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="font-medium text-muted-foreground text-center sm:text-left">
-                          {item.uom || "PCS"}
+
+                        {/* 3. Local Row-specific RGS Input */}
+                        <TableCell className="p-1">
+                          <Input
+                            type="number"
+                            placeholder="RGS #"
+                            className="h-8 text-xs"
+                            disabled={
+                              isLoadingApproval ||
+                              isTerminated ||
+                              isAlreadySubmitted
+                            }
+                            value={rgsNumbers[item.id] ?? ""}
+                            onChange={(e) =>
+                              handleRgsChange(item.id, e.target.value)
+                            }
+                          />
+                        </TableCell>
+
+                        {/* 4. Local Row-specific Logistics Remarks Input */}
+                        <TableCell className="p-1">
+                          <Input
+                            placeholder="Anomalies..."
+                            className="h-8 text-xs"
+                            disabled={
+                              isLoadingApproval ||
+                              isTerminated ||
+                              isAlreadySubmitted
+                            }
+                            value={logisticsRemarks[item.id] ?? ""}
+                            onChange={(e) =>
+                              handleRemarksChange(item.id, e.target.value)
+                            }
+                          />
                         </TableCell>
                       </TableRow>
                     );
@@ -447,7 +536,7 @@ export default function LogisticsViewReturnWarehousePage() {
           {ticket.remarks && (
             <div className="bg-slate-50 p-4 rounded-xl border text-xs">
               <span className="font-semibold text-slate-700 block mb-1">
-                Remarks:
+                Filer Remarks:
               </span>
               <p className="italic text-slate-600 leading-relaxed">
                 {ticket.remarks}
@@ -460,7 +549,7 @@ export default function LogisticsViewReturnWarehousePage() {
           </p>
         </div>
 
-        {/* Real-Time Processing Sequence Timeline Sidebar */}
+        {/* Audit Sequence Timeline Sidebar Module */}
         <div className="w-full">
           <RequestTimeline
             key={`timeline-${ticket.id}-${ticket.status}-${refreshNonce}`}

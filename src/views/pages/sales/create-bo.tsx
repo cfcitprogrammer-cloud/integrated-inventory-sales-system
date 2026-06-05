@@ -30,14 +30,9 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface ExtensionProductVariant {
-  sku: string;
-  name: string;
-  alias: string | null;
+  item_code: string;
+  item_description: string;
   uom: string | null;
-  products: {
-    name: string;
-    category: string | null;
-  };
 }
 
 const REASON_OPTIONS = [
@@ -172,21 +167,16 @@ export default function CreateBadOrderPage() {
       if (q.length < 2 || currentItem.item_code) return;
       setIsSearchingSkus(true);
       try {
-        const { data, error } = await supabaseClients["sales.server.extension"]
-          .from("product_variant")
+        const { data, error } = await supabase()
+          .from("tbl_bo_products")
           .select(
             `
-            sku,
-            name,
-            alias,
-            uom,
-            products!inner (
-              name,
-              category
-            )
+            item_code,
+            item_description,
+            uom
           `,
           )
-          .or(`name.ilike.%${q}%,sku.ilike.%${q}%,alias.ilike.%${q}%`)
+          .or(`item_description.ilike.%${q}%,item_code.ilike.%${q}`)
           .limit(15);
 
         if (error) throw error;
@@ -531,33 +521,26 @@ export default function CreateBadOrderPage() {
                 ) : (
                   variants.map((v) => (
                     <div
-                      key={v.sku}
+                      key={v.item_code}
                       className="p-2 text-xs hover:bg-accent rounded-sm cursor-pointer flex justify-between items-start gap-4"
                       onClick={() => {
                         setCurrentItem((prev) => ({
                           ...prev,
-                          item_code: v.sku,
-                          item_description: v.name,
+                          item_code: v.item_code,
+                          item_description: v.item_description,
                           uom: v.uom || "PCS",
                         }));
-                        setSkuSearch(v.name);
+                        setSkuSearch(v.item_description);
                         setShowSkuDropdown(false);
                       }}
                     >
                       <div className="space-y-0.5">
                         <div className="font-medium text-foreground">
-                          {v.name}
+                          {v.item_description}
                         </div>
                         <div className="text-[10px] text-muted-foreground font-mono flex gap-2">
-                          <span>SKU: {v.sku}</span>
-                          {v.alias && <span>Alias: {v.alias}</span>}
+                          <span>SKU: {v.item_code}</span>
                         </div>
-                        {v.products && (
-                          <div className="text-[9px] text-blue-600 bg-blue-50 px-1 py-0.2 rounded w-fit mt-1">
-                            {v.products.name} •{" "}
-                            {v.products.category || "Unassigned"}
-                          </div>
-                        )}
                       </div>
                       {v.uom && (
                         <span className="text-[9px] bg-muted px-1.5 py-0.5 rounded text-slate-500 font-mono shrink-0">

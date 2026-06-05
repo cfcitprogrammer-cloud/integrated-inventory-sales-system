@@ -24,7 +24,7 @@ import RequestTimeline from "@/components/custom/timeline";
 import {
   emailNotifierUtil,
   type DisposalRequestPayload,
-} from "@/lib/email-notifier"; // Adjust path as necessary
+} from "@/lib/email-notifier";
 import { toast } from "sonner";
 
 export default function AccountingViewReturnWarehousePage() {
@@ -53,6 +53,7 @@ export default function AccountingViewReturnWarehousePage() {
   async function fetchDetailedData() {
     if (!id) return;
     try {
+      setIsLoading(true);
       const ticketRes = await supabase()
         .from("tbl_bo_input")
         .select(
@@ -141,11 +142,14 @@ export default function AccountingViewReturnWarehousePage() {
         actual_qty: i.actual_qty !== null ? Number(i.actual_qty) : undefined,
         expiration_date: i.expiration_date,
         reason: i.reason,
+        // Carry localized variables upward through outbound data paths
+        rgs_number: i.rgs_number || "N/A",
+        logistics_remarks: i.logistics_remarks || "None",
       })),
       attachments: parsedAttachments,
     };
 
-    // Step 3 Hook: Dispatch alert validation packet upwards to GL sign-off queue
+    // Step 3 Hook: Dispatch alert validation packet upwards to GM sign-off queue
     emailNotifierUtil.sendReturnToWHToAGM(alertPayload);
   };
 
@@ -201,24 +205,12 @@ export default function AccountingViewReturnWarehousePage() {
     }
   }
 
-  if (isLoading) {
+  // Guard Clause #1: Processing/Spinup
+  if (isLoading || !ticket) {
     return (
       <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
         <span className="text-xs">Compiling financial ledger matrices...</span>
-      </div>
-    );
-  }
-
-  if (!ticket) {
-    return (
-      <div className="p-6 text-center space-y-2">
-        <p className="text-sm text-muted-foreground">
-          Target validation document financial schema missing context error.
-        </p>
-        <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back
-        </Button>
       </div>
     );
   }
@@ -349,7 +341,6 @@ export default function AccountingViewReturnWarehousePage() {
             </div>
           </div>
 
-          {/* Attachments Panel */}
           {attachments.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
@@ -378,7 +369,7 @@ export default function AccountingViewReturnWarehousePage() {
             </div>
           )}
 
-          {/* Locked Quantities Reference Matrix View */}
+          {/* Locked Quantities & Field Notes Reference Audit Matrix */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold tracking-wide text-slate-700 uppercase">
@@ -393,15 +384,19 @@ export default function AccountingViewReturnWarehousePage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>SKU Item Code</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-center w-[120px]">
-                      Requested Qty
+                    <TableHead className="text-xs">
+                      SKU / Item Description
                     </TableHead>
-                    <TableHead className="text-center w-[120px] bg-slate-50/50">
-                      Returned Qty
+                    <TableHead className="w-[100px]">Reason</TableHead>
+                    <TableHead className="text-center w-[65px]">
+                      Req Qty
                     </TableHead>
-                    <TableHead>Unit Type</TableHead>
+                    <TableHead className="text-center w-[75px] bg-slate-50/50">
+                      Ret Qty
+                    </TableHead>
+                    <TableHead className="w-[65px]">UOM</TableHead>
+                    <TableHead className="w-[100px]">RGS #</TableHead>
+                    <TableHead className="w-[140px]">Logistics Notes</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -415,28 +410,63 @@ export default function AccountingViewReturnWarehousePage() {
                         key={item.id}
                         className="text-xs hover:bg-slate-50/50 align-middle"
                       >
-                        <TableCell className="font-mono font-medium">
-                          {item.item_code}
+                        {/* SKU Item Details */}
+                        <TableCell>
+                          <span className="font-mono font-medium block text-slate-900">
+                            {item.item_code}
+                          </span>
+                          <span
+                            className="text-muted-foreground block max-w-[150px] truncate"
+                            title={item.item_description}
+                          >
+                            {item.item_description}
+                          </span>
                         </TableCell>
-                        <TableCell
-                          className="max-w-[200px] truncate"
-                          title={item.item_description}
-                        >
-                          {item.item_description}
+
+                        {/* Return Reason Field */}
+                        <TableCell className="text-slate-600 font-medium">
+                          {item.reason || "N/A"}
                         </TableCell>
+
+                        {/* Request Qty Field */}
                         <TableCell className="text-center font-medium text-slate-500">
                           {item.request_qty}
                         </TableCell>
+
+                        {/* Actual Count Verified by Logistics */}
                         <TableCell className="bg-slate-50/30 text-center font-bold text-slate-800">
-                          <div className="flex items-center justify-center gap-1.5">
+                          <div className="flex items-center justify-center gap-1">
                             <span>{item.actual_qty ?? "Unverified"}</span>
                             {hasDiscrepancy && (
                               <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="font-medium text-muted-foreground text-center sm:text-left">
+
+                        {/* Unit Type Metric Label */}
+                        <TableCell className="font-medium text-muted-foreground">
                           {item.uom || "PCS"}
+                        </TableCell>
+
+                        {/* Read-only Logistics RGS Number field assignment */}
+                        <TableCell className="font-mono font-medium text-slate-700">
+                          {item.rgs_number ? (
+                            <span className="bg-slate-100 px-1.5 py-0.5 rounded border text-[11px]">
+                              {item.rgs_number}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">None</span>
+                          )}
+                        </TableCell>
+
+                        {/* Read-only Logistics Intake Notes */}
+                        <TableCell
+                          className="text-slate-600 max-w-[140px] truncate italic"
+                          title={item.logistics_remarks}
+                        >
+                          {item.logistics_remarks || (
+                            <span className="text-slate-300 not-italic">—</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
