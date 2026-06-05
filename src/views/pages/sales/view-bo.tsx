@@ -137,8 +137,7 @@ export default function ViewBadOrderDetailsPage() {
 
         <div className="flex items-center gap-2 pl-9 sm:pl-0 font-mono text-xs">
           <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md border border-slate-200 flex items-center gap-1.5">
-            <Hash className="h-3 w-3 text-slate-400" /> ID: #
-            {String(ticket.id).padStart(5, "0")}
+            <Hash className="h-3 w-3 text-slate-400" /> ID: {String(ticket.id)}
           </span>
         </div>
       </header>
@@ -148,13 +147,22 @@ export default function ViewBadOrderDetailsPage() {
         {/* Left/Middle Content Core */}
         <div className="lg:col-span-2 space-y-6">
           {/* Metadata Grid Info Card */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border p-4 bg-white rounded-xl shadow-sm text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 border p-4 bg-white rounded-xl shadow-sm text-xs">
             <div className="space-y-1">
               <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
-                Customer Outlet Name
+                Distributor Name
               </span>
               <span className="font-semibold text-slate-900 text-sm">
                 {ticket.outlet_name}
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
+                Outlet Name
+              </span>
+              <span className="font-semibold text-slate-900 text-sm">
+                {ticket.outlet_name_extra}
               </span>
             </div>
 
@@ -224,7 +232,7 @@ export default function ViewBadOrderDetailsPage() {
                       Reason
                     </TableHead>
                     <TableHead className="text-center w-[120px] font-semibold text-slate-700">
-                      Disposal Qty
+                      Qty
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -281,10 +289,10 @@ export default function ViewBadOrderDetailsPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-center font-bold text-slate-800 whitespace-nowrap">
-                          {item.request_qty}{" "}
-                          <span className="text-[10px] font-normal font-mono text-slate-500 uppercase ml-0.5">
+                          {item.request_qty}
+                          {/* <span className="text-[10px] font-normal font-mono text-slate-500 uppercase ml-0.5">
                             {item.uom || "PCS"}
-                          </span>
+                          </span> */}
                         </TableCell>
                       </TableRow>
                     ))

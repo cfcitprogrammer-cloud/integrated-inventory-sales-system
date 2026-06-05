@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { supabaseClients } from "@/config/db";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -175,9 +175,7 @@ export function LoginForm({
                     </Button>
                     <FieldDescription className="text-center">
                       Don&apos;t have an account?{" "}
-                      <a href="/a/signup" className="underline">
-                        Sign up
-                      </a>
+                      <Link to={"/a/signup"}>Sign Up</Link>
                     </FieldDescription>
                   </Field>
                 </FieldGroup>

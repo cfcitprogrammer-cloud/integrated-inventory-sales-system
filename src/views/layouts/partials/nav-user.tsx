@@ -16,6 +16,9 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { supabase } from "@/config/db";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 export function NavUser({
   user,
@@ -26,6 +29,20 @@ export function NavUser({
   };
 }) {
   const { isMobile } = useSidebar();
+  const navigate = useNavigate();
+
+  const handleLogOut = async () => {
+    const { error } = await supabase().auth.signOut();
+
+    if (error) {
+      toast.error("Error logging out!");
+    } else {
+      toast.success("User logged out successfully!");
+      // Redirect the user or update your application state here
+
+      navigate("/a/signin");
+    }
+  };
 
   return (
     <SidebarMenu>
@@ -67,7 +84,7 @@ export function NavUser({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
 
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLogOut}>
               <LogOut />
               Log out
             </DropdownMenuItem>

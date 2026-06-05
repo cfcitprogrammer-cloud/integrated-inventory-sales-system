@@ -1,3 +1,3 @@
 export default function StocksOnHandPage() {
-  return <h1>dui</h1>;
+  return <h1>Welcome!</h1>;
 }

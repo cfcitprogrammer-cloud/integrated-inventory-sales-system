@@ -63,6 +63,17 @@ export default function BadOrdersListPage() {
     async function syncServerSideData() {
       setIsLoading(true);
       try {
+        // Get the current local user session
+        const {
+          data: { session },
+        } = await supabase().auth.getSession();
+        if (!session?.user) {
+          console.error("No active session found.");
+          setIsLoading(false);
+          return;
+        }
+        const currentUserId = session.user.id;
+
         const from = (urlPage - 1) * itemsPerPage;
         const to = from + itemsPerPage - 1;
         const cleanQuery = debouncedQuery.trim();
@@ -72,7 +83,8 @@ export default function BadOrdersListPage() {
         // -----------------------------------------
         let badgeQuery = supabase()
           .from("tbl_bo_input")
-          .select("status", { head: false });
+          .select("status", { head: false })
+          .eq("user_id", currentUserId); // 👈 Filter metrics by local session ID
 
         if (cleanQuery !== "") {
           badgeQuery = badgeQuery.or(
@@ -112,7 +124,8 @@ export default function BadOrdersListPage() {
             )
           `,
             { count: "exact" },
-          );
+          )
+          .eq("user_id", currentUserId); // 👈 Filter real records by local session ID
 
         if (statusFilter !== "All") {
           dataQuery = dataQuery.eq("status", statusFilter);

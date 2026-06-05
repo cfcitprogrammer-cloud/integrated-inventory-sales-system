@@ -105,7 +105,7 @@ export default function SalesAllSTTPage() {
         `,
         )
         .eq("company_id", currentCompanyId)
-        .eq("user_id", userId)
+        .eq("user_id", userId) // 👈 Already enforced securely via local session context!
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -220,7 +220,7 @@ export default function SalesAllSTTPage() {
             {loading ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="h-24 text-center text-sm text-muted-foreground"
                 >
                   Querying database routing pipelines...
@@ -229,7 +229,7 @@ export default function SalesAllSTTPage() {
             ) : currentItems.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="h-24 text-center text-sm text-muted-foreground"
                 >
                   No active transfer records matching specified parameters.
