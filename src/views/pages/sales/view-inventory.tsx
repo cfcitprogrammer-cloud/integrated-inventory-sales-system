@@ -392,7 +392,7 @@ export default function SalesInventoryViewPage() {
         </div>
         <div>
           <span className="text-muted-foreground block mb-0.5 font-medium">
-            Outlet Name
+            Customer Name
           </span>
           <span className="font-semibold text-slate-900">
             {meta?.outlet_name || "—"}

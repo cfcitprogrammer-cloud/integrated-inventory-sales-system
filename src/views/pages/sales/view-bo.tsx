@@ -147,22 +147,13 @@ export default function ViewBadOrderDetailsPage() {
         {/* Left/Middle Content Core */}
         <div className="lg:col-span-2 space-y-6">
           {/* Metadata Grid Info Card */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 border p-4 bg-white rounded-xl shadow-sm text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border p-4 bg-white rounded-xl shadow-sm text-xs">
             <div className="space-y-1">
               <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
                 Distributor Name
               </span>
               <span className="font-semibold text-slate-900 text-sm">
                 {ticket.outlet_name}
-              </span>
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
-                Outlet Name
-              </span>
-              <span className="font-semibold text-slate-900 text-sm">
-                {ticket.outlet_name_extra}
               </span>
             </div>
 

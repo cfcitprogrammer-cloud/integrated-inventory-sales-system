@@ -164,9 +164,9 @@ export default function LogisticsViewReturnWarehousePage() {
   };
 
   // Handle selected standard scale configurations
-  const handleUomChange = (itemId: string, val: string) => {
-    setUoms((prev) => ({ ...prev, [itemId]: val }));
-  };
+  // const handleUomChange = (itemId: string, val: string) => {
+  //   setUoms((prev) => ({ ...prev, [itemId]: val }));
+  // };
 
   // Packages state data into structured utility contract payloads for Apps Script
   const handleOutboundNotification = (updatedItems: any[]) => {

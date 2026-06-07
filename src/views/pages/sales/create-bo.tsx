@@ -81,7 +81,6 @@ export default function CreateBadOrderPage() {
   // --- Form Payload Base ---
   const [formData, setFormData] = useState({
     outlet_name: "",
-    outlet_name_extra: "",
     bp_code: "",
     workflow_type: "For Disposal" as "For Disposal" | "Return to Warehouse",
     remarks: "",
@@ -248,6 +247,15 @@ export default function CreateBadOrderPage() {
       } = await supabase().auth.getUser();
       if (!user) throw new Error("Authentication state missing.");
 
+      // Fetch employee master record for full name parameters
+      const { data: employeeData } = await supabase()
+        .from("tbl_employees")
+        .select("first_name, last_name")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      console.log(employeeData);
+
       // 1. Insert Master Ticket Layout
       const { data: ticket, error: tErr } = await supabase()
         .from("tbl_bo_input")
@@ -313,12 +321,6 @@ export default function CreateBadOrderPage() {
 
       toast.success("Bad Order requested successfully.");
 
-      // Split metadata to safety parameters for the explicit model structure
-      const userMetaName = user.user_metadata?.full_name || "System Operator";
-      const nameParts = userMetaName.trim().split(" ");
-      const firstName = nameParts[0] || "System";
-      const lastName = nameParts.slice(1).join(" ") || "Operator";
-
       // 4. Construct complete operational payload strictly adhering to DisposalRequestPayload
       const operationalPayload: DisposalRequestPayload = {
         requestId: String(ticket.id),
@@ -328,8 +330,8 @@ export default function CreateBadOrderPage() {
         dateTime: new Date(ticket.created_at || Date.now()).toLocaleString(),
         remarks: ticket.remarks || "No remarks filed.",
         filer: {
-          first_name: firstName,
-          last_name: lastName,
+          first_name: employeeData?.first_name || "System",
+          last_name: employeeData?.last_name || "Operator",
         },
         items: manifestItems,
         attachments: uploadedAttachments,
@@ -424,20 +426,6 @@ export default function CreateBadOrderPage() {
               )}
             </div>
           )}
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-slate-700">
-            Outlet Name
-          </label>
-          <Input
-            required
-            placeholder="Type outlet name"
-            value={formData.outlet_name_extra}
-            onChange={(e) => {
-              setFormData((p) => ({ ...p, outlet_name_extra: e.target.value }));
-            }}
-          />
         </div>
 
         {/* --- WORKFLOW TYPE SELECTION --- */}

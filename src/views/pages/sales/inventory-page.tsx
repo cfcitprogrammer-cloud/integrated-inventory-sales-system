@@ -465,7 +465,7 @@ export default function SalesInventoryPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="outlet-search">Search Outlet Name</Label>
+                <Label htmlFor="outlet-search">Search Customer Name</Label>
                 <Popover
                   open={isOutletComboOpen}
                   onOpenChange={setIsOutletComboOpen}

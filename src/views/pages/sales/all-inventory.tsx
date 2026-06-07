@@ -179,7 +179,7 @@ export default function SalesAllInventoryPage() {
             <TableRow>
               <TableHead>Latest Date Filed</TableHead>
               <TableHead>BP Code</TableHead>
-              <TableHead>Outlet Name</TableHead>
+              <TableHead>Distributor Name</TableHead>
               <TableHead>SKU's Count</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
