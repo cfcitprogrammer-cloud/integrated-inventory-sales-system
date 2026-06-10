@@ -1,2 +1,2 @@
 export const WEBAPP_GAS_URL =
-  "https://script.google.com/macros/s/AKfycbzkAbRxpZZoY5X7xImVinOKqpq96uLjkmMqnIrDIoiCGsZj37JIFm7ED18VYRmiLSVL/exec";
+  "https://script.google.com/macros/s/AKfycbzf1Ni3vD-6IMpuNyxrMC3Wo3QEWwz44C6L6LPmrp8kMa3eZ8KhlAOsOc87bSdDFvBA/exec";

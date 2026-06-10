@@ -182,25 +182,43 @@ export default function LogisticsViewReturnWarehousePage() {
       customerName: ticket.outlet_name || "Unknown Outlet",
       bpCode: ticket.bp_code || "N/A",
       status: "Logistics Counted - Awaiting Accounting Verification",
-      dateTime: new Date().toISOString(),
-      remarks: ticket.remarks || "",
+      dateTime: new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }),
+      remarks: ticket.remarks || "No remarks filed.",
       filer: {
         first_name: ticket.tbl_employees?.first_name || "System",
         last_name: ticket.tbl_employees?.last_name || "Filer",
       },
-      items: updatedItems.map((i) => ({
-        item_code: i.item_code,
-        item_description: i.item_description,
-        uom: uoms[i.id] || i.uom || "PCS",
-        request_qty: Number(i.request_qty),
-        actual_qty: Number(quantities[i.id]),
-        expiration_date: i.expiration_date,
-        reason: i.reason,
-        // Forward row details down the outbound communications node payload
-        rgs_number: rgsNumbers[i.id] || "N/A",
-        logistics_remarks: logisticsRemarks[i.id] || "None",
-      })),
-      attachments: parsedAttachments,
+      items: updatedItems.map((i) => {
+        const rawActual = quantities[i.id];
+
+        // Explicitly grab the value and force handle it as a string
+        const rawRgs = rgsNumbers[i.id];
+        const cleanRgs =
+          rawRgs !== undefined && rawRgs !== null ? String(rawRgs).trim() : "";
+
+        return {
+          item_code: i.item_code,
+          item_description: i.item_description,
+          uom: uoms[i.id] || i.uom || "PCS",
+          request_qty: Number(i.request_qty) || 0,
+
+          // Sanitized numbers
+          actual_qty:
+            rawActual !== undefined && rawActual !== null && rawActual !== ""
+              ? Number(rawActual)
+              : 0,
+
+          // 🛡️ Explicitly cast to string to satisfy type 'string | null | undefined'
+          rgs_number: cleanRgs !== "" ? cleanRgs : "N/A",
+          logistics_remarks: logisticsRemarks[i.id]
+            ? String(logisticsRemarks[i.id]).trim()
+            : "None",
+
+          expiration_date: i.expiration_date || null,
+          reason: i.reason || "Unspecified",
+        };
+      }),
+      attachments: parsedAttachments || [],
     };
 
     emailNotifierUtil.sendReturnToWHToAccounting(alertPayload);

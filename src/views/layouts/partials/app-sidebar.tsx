@@ -301,7 +301,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <NavAccounting items={accountingItems} />
             )}
 
-            {(userRole === "admin" || userRole === "logistics") && (
+            {(userRole === "admin" || userRole === "logistic") && (
               <NavLogistics items={logisticsItems} />
             )}
 

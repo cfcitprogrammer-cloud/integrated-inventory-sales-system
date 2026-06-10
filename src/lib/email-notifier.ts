@@ -9,6 +9,11 @@ export interface DisposalItem {
   request_qty: number;
   expiration_date?: string | null;
   reason?: string | null;
+
+  // 💡 ADDED FOR LOGISTICS & ACCOUNTING AUDIT STEPS
+  actual_qty?: number | null;
+  rgs_number?: string | null;
+  logistics_remarks?: string | null;
 }
 
 export interface SupabaseAttachment {
@@ -55,12 +60,17 @@ const dispatchAlert = (
     ...data,
   };
 
-  axios.post(WEBAPP_GAS_URL, JSON.stringify(payload)).catch((error) => {
-    console.error(
-      `Background Notification Dispatch Failed [${action}]:`,
-      error,
-    );
-  });
+  // Content-Type configured directly to ensure Apps Script can interpret it seamlessly
+  axios
+    .post(WEBAPP_GAS_URL, JSON.stringify(payload), {
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+    })
+    .catch((error) => {
+      console.error(
+        `Background Notification Dispatch Failed [${action}]:`,
+        error,
+      );
+    });
 };
 
 export const emailNotifierUtil = {
@@ -87,7 +97,9 @@ export const emailNotifierUtil = {
     dispatchAlert("RETURN_WH_ALERT_LOGISTICS", data);
   },
 
-  /** Step 2: Fire once Logistics completes the variance count confirmation */
+  /** * Step 2: Fire once Logistics completes the physical inventory count.
+   * Maps out down to Accounting with complete checked matrix metrics.
+   */
   sendReturnToWHToAccounting: (data: DisposalRequestPayload): void => {
     dispatchAlert("RETURN_WH_COUNTED_ALERT_ACCOUNTING", data);
   },

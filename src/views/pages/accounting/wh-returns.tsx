@@ -104,19 +104,24 @@ export default function AccountingReturnToWHPage() {
           .from("tbl_bo_input")
           .select(
             `
-            id,
-            created_at,
-            outlet_name,
-            bp_code,
-            status,
-            tbl_employees (
-              first_name,
-              last_name
-            )
-          `,
+    id,
+    created_at,
+    outlet_name,
+    bp_code,
+    status,
+    tbl_employees (
+      first_name,
+      last_name
+    ),
+    tbl_bo_workflow!inner (
+      rwh_logistic_updated_at
+    )
+  `,
             { count: "exact" },
           )
-          .eq("workflow_type", "Return to Warehouse");
+          .eq("workflow_type", "Return to Warehouse")
+          .eq("status", "Open")
+          .not("tbl_bo_workflow.rwh_logistic_updated_at", "is", null);
 
         if (statusFilter !== "All") {
           dataQuery = dataQuery.eq("status", statusFilter);
