@@ -45,9 +45,7 @@ export default function AccountingDirectDisposalPage() {
   const itemsPerPage = 10;
 
   const handlePageChange = (newPage: number) => {
-    navigate(
-      `/integrated-inventory-sales-system/d/logistics/return-wh/${newPage}`,
-    );
+    navigate(`/d/accounting/direct-disposals/${newPage}`);
   };
 
   // 💡 Pure Debounce Loop: Only sync text tokens. No routing interference allowed here!

@@ -44,7 +44,7 @@ export default function BadOrdersListPage() {
   const itemsPerPage = 10;
 
   const handlePageChange = (newPage: number) => {
-    navigate(`/integrated-inventory-sales-system/d/sales/bo/${newPage}`);
+    navigate(`/d/sales/bo/${newPage}`);
   };
 
   // 💡 Pure Debounce Loop: Only sync text tokens. No routing interference allowed here!
