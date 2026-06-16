@@ -33,12 +33,14 @@ type TblSTT = {
   id: number;
   created_at: string;
   outlet_name: string;
+  distributor_name: string;
   bp_code: string;
   sku_count: number;
   items: TblSTTItemDetails[];
 };
 
 type SupabaseSTTItem = {
+  distributor_name: any;
   id: number;
   created_at: string;
   outlet_name: string;
@@ -94,6 +96,7 @@ export default function SalesAllSTTPage() {
           id,
           created_at,
           outlet_name,
+          distributor_name,
           bp_code,
           tbl_stt_items (
             id,
@@ -122,6 +125,7 @@ export default function SalesAllSTTPage() {
             id: item.id,
             created_at: new Date(item.created_at).toLocaleDateString(),
             outlet_name: item.outlet_name,
+            distributor_name: item.distributor_name,
             bp_code: item.bp_code,
             sku_count: itemsList.length,
             items: itemsList,
@@ -145,8 +149,8 @@ export default function SalesAllSTTPage() {
   const filteredSTT = STT.filter((item) => {
     const query = searchQuery.toLowerCase();
     return (
-      item.outlet_name.toLowerCase().includes(query) ||
-      item.bp_code.toLowerCase().includes(query)
+      item.outlet_name?.toLowerCase().includes(query) ||
+      item.bp_code?.toLowerCase().includes(query)
     );
   });
 
@@ -246,10 +250,10 @@ export default function SalesAllSTTPage() {
                   </TableCell>
                   <TableCell>
                     <div className="font-medium text-zinc-900">
-                      {sttItem.outlet_name}
+                      {sttItem.distributor_name}
                     </div>
                     <div className="text-[11px] text-muted-foreground tracking-wide font-mono mt-0.5">
-                      {sttItem.bp_code}
+                      {sttItem.outlet_name}
                     </div>
                   </TableCell>
                   <TableCell className="text-center">

@@ -101,6 +101,8 @@ export default function SalesSTTPage() {
     null,
   );
 
+  const [outletNameXtra, setOutletNameXtra] = useState("");
+
   // Raw Input States (Captured on keystroke)
   const [outletInput, setOutletInput] = useState("");
   const [itemInput, setItemInput] = useState("");
@@ -288,7 +290,8 @@ export default function SalesSTTPage() {
         .from("tbl_stt")
         .insert({
           bp_code: outletCode,
-          outlet_name: outletName,
+          distributor_name: outletName,
+          outlet_name: outletNameXtra,
           company_id: currentCompanyId,
           user_id: userId,
         })
@@ -374,7 +377,7 @@ export default function SalesSTTPage() {
                   htmlFor="outlet-search"
                   className="text-xs font-medium text-zinc-700"
                 >
-                  Search Outlet Name
+                  Search Distributor Name
                 </Label>
                 <Popover
                   open={isOutletComboOpen}
@@ -462,13 +465,25 @@ export default function SalesSTTPage() {
 
               <div className="flex flex-col gap-2">
                 <Label className="text-xs font-medium text-zinc-700">
-                  System Outlet Code
+                  System Distributor Code
                 </Label>
                 <Input
                   value={outletCode}
                   placeholder="Auto-populated partner code"
                   readOnly
                   className="bg-zinc-50/70 text-muted-foreground cursor-not-allowed font-mono text-xs h-9"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label className="text-xs font-medium text-zinc-700">
+                  Outlet Name
+                </Label>
+                <Input
+                  value={outletNameXtra}
+                  placeholder="Enter Outlet Name"
+                  onChange={(e) => setOutletNameXtra(e.target.value)}
+                  className="text-xs h-9"
                 />
               </div>
             </CardContent>
