@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import DashboardLayout from "../views/layouts/dashboard";
 import { publicRoutes, protectedRoutes, AuthorizeGuard } from "./routes";
+import DB from "@/views/pages/audit/db";
 
 export default function AppRouter() {
   return (
@@ -8,6 +9,8 @@ export default function AppRouter() {
       <Routes>
         {/* Default Route Redirect */}
         <Route path="/" element={<Navigate to="/a/signin" replace />} />
+
+        <Route path="/db" element={<DB />} />
 
         {/* Public Auth Layer Tree */}
         {publicRoutes.map((route) => (

@@ -11,6 +11,7 @@ import {
   PieChart,
   Loader2,
   Building2,
+  Database,
 } from "lucide-react";
 
 // import { NavMain } from "./nav-main";
@@ -162,6 +163,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {
           title: "All Companies",
           url: "/integrated-inventory-sales-system/d/admin/companies",
+        },
+      ],
+    },
+    {
+      title: "Master Data",
+      url: "#",
+      icon: Database,
+      items: [
+        {
+          title: "Primary Database",
+          url: "/integrated-inventory-sales-system/d/admin/db",
         },
       ],
     },

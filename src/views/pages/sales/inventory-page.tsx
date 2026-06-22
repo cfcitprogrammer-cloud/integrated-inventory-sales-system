@@ -694,6 +694,7 @@ export default function SalesInventoryPage() {
                     onChange={(e) => setExpirationDate(e.target.value)}
                     disabled={!selectedVariant}
                     className="text-xs"
+                    required
                   />
                 </div>
               </div>

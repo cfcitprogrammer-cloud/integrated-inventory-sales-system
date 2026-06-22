@@ -33,6 +33,7 @@ import AuditRegistryDashboard from "@/views/pages/audit/inventory-registry-dashb
 import AuditInspectionViewer from "@/views/pages/audit/inspection-viewer";
 import ValidatedAuditDiscrepancyReport from "@/views/pages/reports/inventory-audit";
 import EmployeeKpiDashboard from "@/views/pages/reports/employee-kpi-dashboard";
+import DBRegistryPage from "@/views/pages/audit/db";
 
 function PendingActivationPage() {
   return (
@@ -198,6 +199,7 @@ export const protectedRoutes = [
       { path: "approvals", element: <PendingApprovalsPage /> },
       { path: "licenses", element: <LicensesPage /> },
       { path: "employees", element: <AllEmployeesPage /> },
+      { path: "db", element: <DBRegistryPage /> },
     ],
   },
   {
