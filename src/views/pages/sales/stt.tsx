@@ -191,7 +191,7 @@ export default function SalesSTTPage() {
           .or(
             `name.ilike.%${query}%,sku.ilike.%${query}%,alias.ilike.%${query}%`,
           )
-          .limit(15);
+          .limit(30);
 
         if (error) throw error;
 

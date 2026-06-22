@@ -149,7 +149,7 @@ export default function SalesInventoryPage() {
           .from("bpmd")
           .select("bp_code, customer_name")
           .or(`customer_name.ilike.%${query}%,bp_code.ilike.%${query}%`)
-          .limit(10);
+          .limit(30);
 
         if (error) throw error;
         setOutlets(data || []);
@@ -189,10 +189,7 @@ export default function SalesInventoryPage() {
             )
           `,
           )
-          .or(
-            `name.ilike.%${query}%,sku.ilike.%${query}%,alias.ilike.%${query}%`,
-          )
-          .limit(15);
+          .or(`name.ilike.%${query}%`);
 
         if (error) throw error;
 

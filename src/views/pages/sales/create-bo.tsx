@@ -177,7 +177,7 @@ export default function CreateBadOrderPage() {
           `,
           )
           .or(`item_description.ilike.%${q}%,item_code.ilike.%${q}`)
-          .limit(15);
+          .limit(30);
 
         if (error) throw error;
         setVariants((data as unknown as ExtensionProductVariant[]) || []);
