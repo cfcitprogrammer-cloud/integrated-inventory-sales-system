@@ -1,4 +1,3 @@
-import React from "react";
 import {
   Table,
   TableBody,
@@ -15,7 +14,6 @@ import {
   Calendar,
   DollarSign,
   UserCheck,
-  Trash2,
 } from "lucide-react";
 import RequestTimeline from "@/components/custom/timeline";
 

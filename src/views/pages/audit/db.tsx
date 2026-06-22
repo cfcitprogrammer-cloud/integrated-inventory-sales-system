@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/config/db";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
