@@ -45,7 +45,7 @@ export default function AccountingReturnToWHPage() {
   const itemsPerPage = 10;
 
   const handlePageChange = (newPage: number) => {
-    navigate(`/d/accounting/direct-disposals/${newPage}`);
+    navigate(`/d/accounting/return-wh/${newPage}`);
   };
 
   // 💡 Pure Debounce Loop: Only sync text tokens. No routing interference allowed here!
@@ -74,7 +74,8 @@ export default function AccountingReturnToWHPage() {
         let badgeQuery = supabase()
           .from("tbl_bo_input")
           .select("status", { head: false })
-          .eq("workflow_type", "Return to Warehouse");
+          .eq("workflow_type", "Return to Warehouse")
+          .neq("actual_qty", null);
 
         if (cleanQuery !== "") {
           badgeQuery = badgeQuery.or(

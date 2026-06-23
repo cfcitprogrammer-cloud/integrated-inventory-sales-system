@@ -12,15 +12,16 @@ export default function AppRouter() {
 
         <Route path="/db" element={<DB />} />
 
-        {/* Public Auth Layer Tree */}
+        {/* 🟢 Public Auth Layer: Totally un-guarded. The guard cannot touch these. */}
         {publicRoutes.map((route) => (
           <Route key={route.path} path={route.path} element={route.element} />
         ))}
 
-        {/* Protected Dashboard Architecture Viewport Layer */}
+        {/* 🟢 Protected Dashboard Layer */}
         {protectedRoutes.map((group) => (
           <Route
             key={group.path}
+            // We pass down configuration context down cleanly per layout group
             element={
               <AuthorizeGuard
                 allowedRoles={group.allowedRoles}

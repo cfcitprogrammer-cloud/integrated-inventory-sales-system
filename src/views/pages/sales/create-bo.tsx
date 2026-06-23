@@ -240,6 +240,13 @@ export default function CreateBadOrderPage() {
     if (manifestItems.length === 0)
       return toast.error("Please append at least one SKU to the return table.");
 
+    // 👇 ADD THIS NEW ATTACHMENT VALIDATION CHECK
+    if (files.length === 0) {
+      return toast.error(
+        "Please attach at least one proof or validation document before requesting.",
+      );
+    }
+
     setIsSubmitting(true);
     try {
       const {

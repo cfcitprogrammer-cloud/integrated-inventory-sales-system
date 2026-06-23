@@ -49,14 +49,10 @@ function PendingActivationPage() {
   );
 }
 
+type UserRole = "admin" | "sales" | "logistic" | "accounting" | "audit";
+
 interface GuardProps {
-  allowedRoles?: readonly (
-    | "admin"
-    | "sales"
-    | "logistic"
-    | "accounting"
-    | "audit"
-  )[];
+  allowedRoles?: readonly UserRole[];
   allowPending?: boolean;
 }
 
@@ -65,19 +61,30 @@ export function AuthorizeGuard({
   allowPending = false,
 }: GuardProps) {
   const location = useLocation();
+
+  // 🟢 Optimistic Initial State: If keys exist in localStorage, assume true while checking
   const [authState, setAuthState] = useState<{
     checking: boolean;
     isAuthenticated: boolean;
     isPendingApproval: boolean;
-    role: string | null;
-  }>({
-    checking: true,
-    isAuthenticated: false,
-    isPendingApproval: false,
-    role: null,
+    role: UserRole | null;
+    hasLicensesButNoContext: boolean;
+  }>(() => {
+    const cachedCompanyId = localStorage.getItem("active_company_id");
+    const cachedRole = localStorage.getItem("active_role") as UserRole | null;
+
+    return {
+      checking: true,
+      isAuthenticated: !!cachedCompanyId,
+      isPendingApproval: false,
+      role: cachedRole,
+      hasLicensesButNoContext: !cachedCompanyId,
+    };
   });
 
   useEffect(() => {
+    let isMounted = true;
+
     async function evaluateSecurityContext() {
       try {
         const mainClient = supabaseClients["sales.server.main"];
@@ -85,63 +92,91 @@ export function AuthorizeGuard({
           data: { session },
         } = await mainClient.auth.getSession();
 
+        if (!isMounted) return;
+
+        // 1. Session is completely missing
         if (!session) {
+          localStorage.removeItem("active_company_id");
+          localStorage.removeItem("active_role");
           setAuthState({
             checking: false,
             isAuthenticated: false,
             isPendingApproval: false,
             role: null,
+            hasLicensesButNoContext: false,
           });
           return;
         }
 
-        // 🟢 FIXED: Read chosen tenant coordinates directly out of local memory cache
+        // 2. Fetch user confirmation permissions
+        const { data: licenses } = await mainClient
+          .from("tbl_licenses")
+          .select("license_role, company_id")
+          .eq("user_id", session.user.id);
+
+        if (!isMounted) return;
+
+        // 3. User has zero assigned workspaces
+        if (!licenses || licenses.length === 0) {
+          localStorage.removeItem("active_company_id");
+          localStorage.removeItem("active_role");
+          setAuthState({
+            checking: false,
+            isAuthenticated: true,
+            isPendingApproval: true,
+            role: null,
+            hasLicensesButNoContext: false,
+          });
+          return;
+        }
+
+        // 4. Match credentials safely against current context state variables
         const cachedCompanyId = localStorage.getItem("active_company_id");
-        const cachedRole = localStorage.getItem("active_role");
+        const cachedRole = localStorage.getItem(
+          "active_role",
+        ) as UserRole | null;
 
-        if (!cachedCompanyId || !cachedRole) {
-          // If authenticated but missing selected coordinates, check if database matches ANY row
-          const { data: licenses } = await mainClient
-            .from("tbl_licenses")
-            .select("license_role, company_id")
-            .eq("user_id", session.user.id);
+        const dynamicMatchingLicense = licenses.find(
+          (lic) =>
+            String(lic.company_id) === String(cachedCompanyId) &&
+            String(lic.license_role) === String(cachedRole),
+        );
 
-          if (!licenses || licenses.length === 0) {
-            // Truly a pending user instance with no organizational access
-            setAuthState({
-              checking: false,
-              isAuthenticated: true,
-              isPendingApproval: true,
-              role: null,
-            });
-          } else {
-            // User has licenses but cleared cache/cookies; bounce back to signin screen to select tenant context
-            setAuthState({
-              checking: false,
-              isAuthenticated: false,
-              isPendingApproval: false,
-              role: null,
-            });
-          }
+        if (!cachedCompanyId || !cachedRole || !dynamicMatchingLicense) {
+          setAuthState({
+            checking: false,
+            isAuthenticated: true,
+            isPendingApproval: false,
+            role: null,
+            hasLicensesButNoContext: true,
+          });
         } else {
-          // Context confirmed valid! Load the selected active workspace scope configurations
           setAuthState({
             checking: false,
             isAuthenticated: true,
             isPendingApproval: false,
             role: cachedRole,
+            hasLicensesButNoContext: false,
           });
         }
       } catch {
-        setAuthState({
-          checking: false,
-          isAuthenticated: false,
-          isPendingApproval: false,
-          role: null,
-        });
+        if (isMounted) {
+          setAuthState({
+            checking: false,
+            isAuthenticated: false,
+            isPendingApproval: false,
+            role: null,
+            hasLicensesButNoContext: false,
+          });
+        }
       }
     }
+
     evaluateSecurityContext();
+
+    return () => {
+      isMounted = false;
+    };
   }, [location.pathname]);
 
   if (authState.checking) {
@@ -152,31 +187,38 @@ export function AuthorizeGuard({
     );
   }
 
+  // Guard Action 1: Unauthenticated -> Login
   if (!authState.isAuthenticated) {
     return <Navigate to="/a/signin" state={{ from: location }} replace />;
   }
 
+  // Guard Action 2: Activation pending layout view override
   if (authState.isPendingApproval && !allowPending) {
     return <Navigate to="/d/pending-activation" replace />;
   }
 
-  if (
-    allowedRoles &&
-    authState.role &&
-    !allowedRoles.includes(authState.role as any)
-  ) {
-    return <Navigate to="/d/inventory/stocks-on-hand" replace />;
+  // Guard Action 3: Needs workspace context selection
+  if (authState.hasLicensesButNoContext) {
+    return <Navigate to="/a/signin" state={{ from: location }} replace />;
+  }
+
+  // Guard Action 4: Strict RBAC Group Alignment Matrix Validation Check
+  if (allowedRoles) {
+    if (!authState.role || !allowedRoles.includes(authState.role)) {
+      return <Navigate to="/d/inventory/stocks-on-hand" replace />;
+    }
   }
 
   return <Outlet />;
 }
 
-// Routes Configurations
+// Public Layer Routes
 export const publicRoutes = [
   { path: "/a/signup", element: <SignupPage /> },
   { path: "/a/signin", element: <LoginPage /> },
 ];
 
+// Protected Dashboard Configurations
 export const protectedRoutes = [
   {
     path: "/d/pending-activation",
@@ -252,7 +294,6 @@ export const protectedRoutes = [
       },
     ],
   },
-
   {
     path: "/d/audit",
     allowedRoles: ["audit", "admin"] as const,
