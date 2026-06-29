@@ -287,6 +287,10 @@ export default function SalesInventoryPage() {
       toast.error("Quantity must be greater than zero.");
       return;
     }
+    if (expirationDate.length <= 0) {
+      toast.error("Expiration Date required");
+      return;
+    }
 
     // Fixed Check: Verify match using combination of SKU AND Expiration Date state parameters
     const isDuplicate = inventoryLines.some(

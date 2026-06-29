@@ -204,6 +204,9 @@ export default function CreateBadOrderPage() {
     if (!currentItem.reason) {
       return toast.error("Please specify a reason for this bad order item.");
     }
+    if (!currentItem.expiration_date) {
+      return toast.error("Please specify an expiration date");
+    }
 
     // Finalize reason calculation if using specified alternative string
     const finalizedReason =
