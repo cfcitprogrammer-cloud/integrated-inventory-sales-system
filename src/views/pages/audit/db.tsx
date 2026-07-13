@@ -13,6 +13,19 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   AlertCircle,
   FileText,
@@ -21,6 +34,9 @@ import {
   ChevronRight,
   ChevronLeft,
   User,
+  FilterX,
+  Calendar as CalendarIcon,
+  Filter,
 } from "lucide-react";
 import RecordDetailsPage from "./record-details";
 
@@ -41,24 +57,47 @@ export default function DBRegistryPage() {
   // Router management state
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
 
-  // Memoized Data Layer handling Joins, Sorting, and Server-Side Pagination Counts
+  // Filter States
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
+  const [workflowFilter, setWorkflowFilter] = useState<string>("all");
+
+  // Memoized Data Layer handling Joins, Sorting, Dynamic Filtering, and Pagination Counts
   const db = useMemo(() => {
     const client = supabase();
     const rangeStart = (currentPage - 1) * ITEMS_PER_PAGE;
     const rangeEnd = rangeStart + ITEMS_PER_PAGE - 1;
 
+    // Helper function to attach date range filters to any Supabase query
+    const applyDateFilters = (query: any) => {
+      let filtered = query;
+      if (fromDate) {
+        // Start of selected day
+        filtered = filtered.gte("created_at", new Date(fromDate).toISOString());
+      }
+      if (toDate) {
+        // End of selected day
+        const toDateEnd = new Date(toDate);
+        toDateEnd.setHours(23, 59, 59, 999);
+        filtered = filtered.lte("created_at", toDateEnd.toISOString());
+      }
+      return filtered;
+    };
+
     return {
       inventory: async () => {
-        const { data, error, count } = await client
-          .from("tbl_inventory")
-          .select(
-            `
+        let query = client.from("tbl_inventory").select(
+          `
             *, 
             items:tbl_inventory_items(*),
             user:tbl_employees(first_name, last_name, email)
           `,
-            { count: "exact" },
-          )
+          { count: "exact" },
+        );
+
+        query = applyDateFilters(query);
+
+        const { data, error, count } = await query
           .order("created_at", { ascending: false })
           .range(rangeStart, rangeEnd);
 
@@ -66,16 +105,18 @@ export default function DBRegistryPage() {
         return { data, count: count || 0 };
       },
       stt: async () => {
-        const { data, error, count } = await client
-          .from("tbl_stt")
-          .select(
-            `
+        let query = client.from("tbl_stt").select(
+          `
             *, 
             items:tbl_stt_items(*),
             user:tbl_employees(first_name, last_name, email)
           `,
-            { count: "exact" },
-          )
+          { count: "exact" },
+        );
+
+        query = applyDateFilters(query);
+
+        const { data, error, count } = await query
           .order("created_at", { ascending: false })
           .range(rangeStart, rangeEnd);
 
@@ -83,18 +124,24 @@ export default function DBRegistryPage() {
         return { data, count: count || 0 };
       },
       bo: async () => {
-        const { data, error, count } = await client
-          .from("tbl_bo_input")
-          .select(
-            `
+        let query = client.from("tbl_bo_input").select(
+          `
             *,
             items:tbl_bo_input_items(*),
             attachments:tbl_bo_attachments(*),
             workflow:tbl_bo_workflow(*),
             user:tbl_employees(first_name, last_name, email)
           `,
-            { count: "exact" },
-          )
+          { count: "exact" },
+        );
+
+        query = applyDateFilters(query);
+
+        if (workflowFilter && workflowFilter !== "all") {
+          query = query.eq("workflow_type", workflowFilter);
+        }
+
+        const { data, error, count } = await query
           .order("created_at", { ascending: false })
           .range(rangeStart, rangeEnd);
 
@@ -102,11 +149,18 @@ export default function DBRegistryPage() {
         return { data, count: count || 0 };
       },
     };
-  }, [currentPage]);
+  }, [currentPage, fromDate, toDate, workflowFilter]);
 
-  // Reset page layout cursor context whenever shifting base modules tabs
+  // Reset pagination cursor when tab changes or filters are adjusted
   useEffect(() => {
     setCurrentPage(1);
+  }, [activeTab, fromDate, toDate, workflowFilter]);
+
+  // Reset workflow filter when switching tabs away from 'bo'
+  useEffect(() => {
+    if (activeTab !== "bo") {
+      setWorkflowFilter("all");
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -134,6 +188,15 @@ export default function DBRegistryPage() {
     if (activeTab === "stt") return 6;
     return 5; // inventory
   };
+
+  const handleClearFilters = () => {
+    setFromDate("");
+    setToDate("");
+    setWorkflowFilter("all");
+  };
+
+  const isFiltered =
+    fromDate !== "" || toDate !== "" || workflowFilter !== "all";
 
   if (selectedRecordId !== null) {
     const currentRecord = data.find((r) => r.id === selectedRecordId);
@@ -186,6 +249,102 @@ export default function DBRegistryPage() {
           </TabsTrigger>
         </TabsList>
       </Tabs>
+
+      {/* FILTER CONTROLS BAR */}
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 border rounded-xl bg-card shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Date Range Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 gap-2 border-dashed"
+              >
+                <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                <span>
+                  {fromDate || toDate
+                    ? `${fromDate || "Start"} to ${toDate || "End"}`
+                    : "Logged Date Range"}
+                </span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-4 space-y-3" align="start">
+              <div className="space-y-1">
+                <h4 className="font-medium text-xs text-muted-foreground">
+                  Filter by Logged Date
+                </h4>
+              </div>
+              <div className="grid gap-2">
+                <div className="grid gap-1">
+                  <label className="text-xs text-muted-foreground">
+                    Date From
+                  </label>
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label className="text-xs text-muted-foreground">
+                    Date To
+                  </label>
+                  <Input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Workflow Filter Dropdown (Bad Orders tab only) */}
+          {activeTab === "bo" && (
+            <Select
+              value={workflowFilter}
+              onValueChange={(val) => setWorkflowFilter(val)}
+            >
+              <SelectTrigger className="w-[200px] h-9 text-xs">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="Workflow Type" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Workflows</SelectItem>
+                <SelectItem value="For Disposal">For Disposal</SelectItem>
+                <SelectItem value="Return to Warehouse">
+                  Return to Warehouse
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
+          {/* Reset Filters Trigger */}
+          {isFiltered && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClearFilters}
+              className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+            >
+              <FilterX className="h-3.5 w-3.5" />
+              Reset
+            </Button>
+          )}
+        </div>
+
+        {/* Query Summary Counter */}
+        <div className="text-xs text-muted-foreground">
+          Showing{" "}
+          <span className="font-semibold text-foreground">{totalCount}</span>{" "}
+          matching records
+        </div>
+      </div>
 
       {error && (
         <Alert variant="destructive">
