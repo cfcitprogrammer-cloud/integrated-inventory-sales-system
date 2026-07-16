@@ -402,7 +402,7 @@ export default function LogisticsViewReturnWarehousePage() {
 
       if (actionType === "APPROVE") {
         const hasMissingQty = items.some((item) => quantities[item.id] === "");
-        const hasMissingRgs = items.some((item) => rgsNumbers[item.id] === "");
+        // const hasMissingRgs = items.some((item) => rgsNumbers[item.id] === "");
 
         if (hasMissingQty) {
           toast.error(
