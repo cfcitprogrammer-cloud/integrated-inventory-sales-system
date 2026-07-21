@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Banknote,
+  FileSpreadsheet,
 } from "lucide-react";
 import { supabase } from "@/config/db";
 import {
@@ -26,6 +27,7 @@ import {
   type DisposalRequestPayload,
 } from "@/lib/email-notifier";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function AccountingViewReturnWarehousePage() {
   const { id } = useParams<{ id: string }>();
@@ -205,6 +207,77 @@ export default function AccountingViewReturnWarehousePage() {
     }
   }
 
+  // --- EXPORT TO EXCEL ---
+  const handleExportToExcel = () => {
+    if (!ticket || items.length === 0) {
+      toast.error("No items available to export.");
+      return;
+    }
+
+    try {
+      // 1. Prepare Header and Metadata Map
+      const headerData = [
+        ["Warehouse Return Financial Summary"],
+        ["Request ID", ticket.id],
+        ["Customer Outlet Name", ticket.outlet_name],
+        ["BP Code", ticket.bp_code],
+        ["Status", ticket.status],
+        [
+          "Filer",
+          ticket.tbl_employees
+            ? `${ticket.tbl_employees.last_name}, ${ticket.tbl_employees.first_name}`
+            : "System-Generated",
+        ],
+        ["Total Net Cost (PHP)", totalCost || "Not Assigned"],
+        [],
+        ["Item Manifest"],
+      ];
+
+      // 2. Prepare Items Table
+      const itemsData = items.map((item) => ({
+        "SKU Item Code": item.item_code,
+        Description: item.item_description,
+        Reason: item.reason || "N/A",
+        "Requested Qty": item.request_qty,
+        "Actual Qty (Ret)": item.actual_qty ?? "Unverified",
+        UOM: item.uom || "PCS",
+        "RGS Number": item.rgs_number || "None",
+        "Logistics Notes": item.logistics_remarks || "None",
+      }));
+
+      // 3. Stitch Map to Worksheet
+      const ws = XLSX.utils.aoa_to_sheet(headerData);
+
+      // Append items starting at row 10 (A10) to respect headers above
+      XLSX.utils.sheet_add_json(ws, itemsData, { origin: "A10" });
+
+      // Auto-size columns slightly for better readability
+      const columnWidths = [
+        { wch: 20 },
+        { wch: 35 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 10 },
+        { wch: 20 },
+        { wch: 30 },
+      ];
+      ws["!cols"] = columnWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Warehouse Manifest");
+
+      // Save file
+      const fileName = `Warehouse_Return_${ticket.bp_code || ticket.id}_${new Date().toISOString().split("T")[0]}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.success("Excel manifest downloaded successfully.");
+    } catch (error) {
+      console.error("Export to Excel failed:", error);
+      toast.error("Failed to export Excel manifest.");
+    }
+  };
+
   // Guard Clause #1: Processing/Spinup
   if (isLoading || !ticket) {
     return (
@@ -241,6 +314,16 @@ export default function AccountingViewReturnWarehousePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 sm:flex-none text-xs font-medium"
+            onClick={handleExportToExcel}
+            disabled={items.length === 0}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Export Manifest
+          </Button>
+
           <Button
             size="sm"
             className="flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"

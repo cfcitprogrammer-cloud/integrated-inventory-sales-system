@@ -10,6 +10,7 @@ import {
   Package,
   Calendar,
   AlertCircle,
+  Download,
 } from "lucide-react";
 import { supabase } from "@/config/db";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import {
   type DisposalRequestPayload,
 } from "@/lib/email-notifier";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function AccountingViewDirectDisposalsPage() {
   const { id } = useParams<{ id: string }>();
@@ -199,6 +201,62 @@ export default function AccountingViewDirectDisposalsPage() {
     }
   }
 
+  // Export Items Manifest to Excel
+  const handleExportExcel = () => {
+    if (!ticket || items.length === 0) {
+      toast.error("No items available to export.");
+      return;
+    }
+
+    try {
+      // Prepare metadata for the export
+      const headerData = [
+        ["Direct Disposal Summary"],
+        ["Request ID", ticket.id],
+        ["Customer Outlet Name", ticket.outlet_name],
+        ["BP Code", ticket.bp_code],
+        ["Status", ticket.status],
+        [
+          "Filer",
+          ticket.tbl_employees
+            ? `${ticket.tbl_employees.last_name}, ${ticket.tbl_employees.first_name}`
+            : "System-Generated",
+        ],
+        [],
+        ["Item Manifest"],
+      ];
+
+      // Prepare items data
+      const itemsData = items.map((item) => ({
+        "SKU Item Code": item.item_code,
+        Description: item.item_description,
+        "Expiration Date": item.expiration_date || "No date",
+        Reason: item.reason || "Unspecified",
+        "Request Qty": item.request_qty,
+        UOM: item.uom || "PCS",
+      }));
+
+      // Create a worksheet
+      const ws = XLSX.utils.aoa_to_sheet(headerData);
+
+      // Append items data starting at row 9 (after the header)
+      XLSX.utils.sheet_add_json(ws, itemsData, { origin: "A9" });
+
+      // Build workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Disposal Manifest");
+
+      // Save file
+      const fileName = `DirectDisposal_${ticket.bp_code || ticket.id}_${new Date().toISOString().split("T")[0]}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.success("Excel manifest downloaded successfully.");
+    } catch (error) {
+      console.error("Export to Excel failed:", error);
+      toast.error("Failed to export Excel manifest.");
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
@@ -248,7 +306,16 @@ export default function AccountingViewDirectDisposalsPage() {
         </div>
 
         {/* Binary Action Operations Block */}
-        <div className="flex items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pl-9 sm:pl-0">
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 sm:flex-none text-xs font-medium"
+            onClick={handleExportExcel}
+          >
+            <Download className="h-3.5 w-3.5 mr-1" /> Export Manifest
+          </Button>
+
           <Button
             size="sm"
             variant="destructive"
