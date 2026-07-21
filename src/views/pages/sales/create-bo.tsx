@@ -167,16 +167,11 @@ export default function CreateBadOrderPage() {
       if (q.length < 2 || currentItem.item_code) return;
       setIsSearchingSkus(true);
       try {
+        // Corrected .or() filter syntax with `%` on both sides
         const { data, error } = await supabase()
           .from("tbl_bo_products")
-          .select(
-            `
-            item_code,
-            item_description,
-            uom
-          `,
-          )
-          .or(`item_description.ilike.%${q}%,item_code.ilike.%${q}`)
+          .select("item_code, item_description, uom")
+          .or(`item_description.ilike.%${q}%,item_code.ilike.%${q}%`)
           .limit(30);
 
         if (error) throw error;
