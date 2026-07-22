@@ -199,8 +199,15 @@ export default function CreateBadOrderPage() {
     if (!currentItem.reason) {
       return toast.error("Please specify a reason for this bad order item.");
     }
-    if (!currentItem.expiration_date) {
-      return toast.error("Please specify an expiration date");
+
+    // Conditionally validate Expiration Date
+    if (
+      currentItem.reason === "expired (expired na)" &&
+      !currentItem.expiration_date
+    ) {
+      return toast.error(
+        "Please specify an expiration date for expired items.",
+      );
     }
 
     // Finalize reason calculation if using specified alternative string
@@ -212,6 +219,11 @@ export default function CreateBadOrderPage() {
     const completedItemPayload: DisposalItem = {
       ...currentItem,
       reason: finalizedReason,
+      // Reset expiration date if it wasn't an expired item
+      expiration_date:
+        currentItem.reason === "expired (expired na)"
+          ? currentItem.expiration_date
+          : null,
     };
 
     setManifestItems((p) => [...p, completedItemPayload]);
@@ -238,7 +250,6 @@ export default function CreateBadOrderPage() {
     if (manifestItems.length === 0)
       return toast.error("Please append at least one SKU to the return table.");
 
-    // 👇 ADD THIS NEW ATTACHMENT VALIDATION CHECK
     if (files.length === 0) {
       return toast.error(
         "Please attach at least one proof or validation document before requesting.",
@@ -597,37 +608,25 @@ export default function CreateBadOrderPage() {
                   />
                 </div>
 
-                {/* 2. Expiration Date */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-slate-500 block">
-                    Expiration Date
-                  </label>
-                  <Input
-                    type="date"
-                    value={currentItem.expiration_date || ""}
-                    onChange={(e) =>
-                      setCurrentItem((p) => ({
-                        ...p,
-                        expiration_date: e.target.value || null,
-                      }))
-                    }
-                    className="h-8 text-slate-700"
-                  />
-                </div>
-
-                {/* 3. Reason Dropdown */}
+                {/* 2. Reason Dropdown */}
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-500 block">
                     Reason for Bad Order
                   </label>
                   <select
                     value={currentItem.reason || ""}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const selectedReason = e.target.value;
                       setCurrentItem((p) => ({
                         ...p,
-                        reason: e.target.value,
-                      }))
-                    }
+                        reason: selectedReason,
+                        // Automatically clear expiration_date if the reason is NOT expired
+                        expiration_date:
+                          selectedReason === "expired (expired na)"
+                            ? p.expiration_date
+                            : null,
+                      }));
+                    }}
                     className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <option value="" disabled>
@@ -640,6 +639,26 @@ export default function CreateBadOrderPage() {
                     ))}
                   </select>
                 </div>
+
+                {/* 3. Expiration Date (ONLY SHOWN IF REASON IS EXPIRED) */}
+                {currentItem.reason === "expired (expired na)" && (
+                  <div className="space-y-1 transition-all animate-in fade-in duration-150">
+                    <label className="text-[10px] font-medium text-slate-500 block">
+                      Expiration Date
+                    </label>
+                    <Input
+                      type="date"
+                      value={currentItem.expiration_date || ""}
+                      onChange={(e) =>
+                        setCurrentItem((p) => ({
+                          ...p,
+                          expiration_date: e.target.value || null,
+                        }))
+                      }
+                      className="h-8 text-slate-700"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Dynamic Sub-input if "others, please specify" is caught */}
