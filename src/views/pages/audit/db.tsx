@@ -42,6 +42,44 @@ import RecordDetailsPage from "./record-details";
 
 const ITEMS_PER_PAGE = 10;
 
+// Helper function to deduce the current department based on workflow timestamps and statuses
+const getOngoingDepartment = (record: any) => {
+  // 1. If overall status indicates it's done
+  if (
+    record.status?.toLowerCase() === "completed" ||
+    record.status?.toLowerCase() === "rejected"
+  ) {
+    return "Closed";
+  }
+
+  // 2. Extract workflow data (Supabase joins usually return an array, so we take the first item if so)
+  const wf = Array.isArray(record.workflow)
+    ? record.workflow[0]
+    : record.workflow;
+  if (!wf) return "Routing / Unassigned";
+
+  // 3. Deduction logic for "For Disposal"
+  if (record.workflow_type === "For Disposal") {
+    if (!wf.dd_acc_status || wf.dd_acc_status.toLowerCase() === "pending") {
+      return "Accounting";
+    }
+    if (!wf.dd_agm_status || wf.dd_agm_status.toLowerCase() === "pending") {
+      return "AGM";
+    }
+  }
+
+  // 4. Deduction logic for "Return to Warehouse"
+  if (record.workflow_type === "Return to Warehouse") {
+    if (!wf.rwh_logistic_updated_at) return "Logistics";
+    if (!wf.rwh_acc_updated_at) return "Accounting";
+    if (!wf.rwh_agm_status || wf.rwh_agm_status.toLowerCase() === "pending") {
+      return "AGM";
+    }
+  }
+
+  return "Completed";
+};
+
 export default function DBRegistryPage() {
   const [activeTab, setActiveTab] = useState<"inventory" | "stt" | "bo">(
     "inventory",
@@ -362,9 +400,9 @@ export default function DBRegistryPage() {
               <TableHead>BP Code</TableHead>
               {activeTab === "bo" && (
                 <>
-                  <TableHead>Distributor Name</TableHead>
+                  <TableHead>Outlet Name</TableHead>
                   <TableHead>Workflow</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Current Department</TableHead>
                   <TableHead className="text-right">Total Cost</TableHead>
                 </>
               )}
@@ -433,7 +471,7 @@ export default function DBRegistryPage() {
                       </Badge>
                     </TableCell>
 
-                    {/* DYNAMIC MIDDLE COLUMNS CORRECTION */}
+                    {/* DYNAMIC MIDDLE COLUMNS */}
                     {activeTab === "bo" && (
                       <>
                         <TableCell className="font-medium">
@@ -443,8 +481,11 @@ export default function DBRegistryPage() {
                           {record.workflow_type || "—"}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="secondary" className="text-xs">
-                            {record.status || "Pending"}
+                          <Badge
+                            variant="secondary"
+                            className="text-xs font-medium bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                          >
+                            {getOngoingDepartment(record)}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs font-semibold">
