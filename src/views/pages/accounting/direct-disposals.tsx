@@ -8,7 +8,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useState, useEffect } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/config/db";
 import { Button } from "@/components/ui/button";
 import { Eye } from "lucide-react";
@@ -26,11 +26,13 @@ type DirectDisposalType = {
 };
 
 export default function AccountingDirectDisposalPage() {
-  const { page } = useParams<{ page: string }>();
-  const navigate = useNavigate();
+  // 💡 FIX: Replaced useParams/useNavigate with useSearchParams to prevent strict Route matching failures
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pageParam = searchParams.get("page");
 
   // Safeguard: Fallback to page 1 if URL param is garbage or empty
-  const urlPage = page && !isNaN(Number(page)) ? Number(page) : 1;
+  const urlPage =
+    pageParam && !isNaN(Number(pageParam)) ? Number(pageParam) : 1;
 
   const [directDisposals, setDirectDisposals] = useState<DirectDisposalType[]>(
     [],
@@ -44,8 +46,12 @@ export default function AccountingDirectDisposalPage() {
   const [totalRecords, setTotalRecords] = useState<number>(0);
   const itemsPerPage = 10;
 
+  // 💡 FIX: Update URL search params seamlessly without breaking route mounting
   const handlePageChange = (newPage: number) => {
-    navigate(`/d/accounting/direct-disposals/${newPage}`);
+    setSearchParams((prev) => {
+      prev.set("page", String(newPage));
+      return prev;
+    });
   };
 
   // 💡 Pure Debounce Loop: Only sync text tokens. No routing interference allowed here!
@@ -168,7 +174,7 @@ export default function AccountingDirectDisposalPage() {
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
-              // 💡 Explicit Interaction: Reset page ONLY when the human hits a key in the search field
+              // Explicit Interaction: Reset page ONLY when the human hits a key in the search field
               if (urlPage !== 1) {
                 handlePageChange(1);
               }
@@ -348,7 +354,7 @@ export default function AccountingDirectDisposalPage() {
                 variant="outline"
                 size="xs"
                 onClick={() => handlePageChange(Math.max(urlPage - 1, 1))}
-                disabled={urlPage === 1}
+                disabled={urlPage <= 1}
               >
                 Previous
               </Button>
@@ -361,7 +367,7 @@ export default function AccountingDirectDisposalPage() {
                 onClick={() =>
                   handlePageChange(Math.min(urlPage + 1, totalPages))
                 }
-                disabled={urlPage === totalPages}
+                disabled={urlPage >= totalPages}
               >
                 Next
               </Button>

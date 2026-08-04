@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import * as XLSX from "xlsx";
 import {
   Table,
   TableBody,
@@ -33,6 +34,7 @@ import {
   AlertTriangle,
   Clock,
   CheckCircle2,
+  Download,
 } from "lucide-react";
 import RequestTimeline from "@/components/custom/timeline";
 
@@ -79,7 +81,6 @@ export default function RecordDetailsPage({
     }
 
     const today = new Date();
-    // Normalize time to compare pure dates
     today.setHours(0, 0, 0, 0);
     expDate.setHours(0, 0, 0, 0);
 
@@ -99,16 +100,13 @@ export default function RecordDetailsPage({
   const processedItems = useMemo(() => {
     const rawItems = record.items || [];
 
-    // 1. Enrich with status & filter
     const filtered = rawItems.filter((item: any) => {
       const meta = getExpirationMeta(item.expiration_date);
 
-      // Expiration Category Filter
       if (expirationFilter !== "all" && meta.status !== expirationFilter) {
         return false;
       }
 
-      // Date Range Filter
       if (item.expiration_date) {
         const itemExp = new Date(item.expiration_date);
         if (expDateFrom) {
@@ -122,14 +120,12 @@ export default function RecordDetailsPage({
           if (itemExp > to) return false;
         }
       } else if (expDateFrom || expDateTo) {
-        // Exclude items without dates if date range filter is active
         return false;
       }
 
       return true;
     });
 
-    // 2. Sort: Expired -> Nearly Expired -> Not Expired -> No Date
     const statusPriority: Record<ExpirationStatus, number> = {
       expired: 1,
       near_expired: 2,
@@ -145,7 +141,6 @@ export default function RecordDetailsPage({
         statusPriority[metaA.status] - statusPriority[metaB.status];
       if (priorityDiff !== 0) return priorityDiff;
 
-      // Secondary Sort: Soonest expiring first within the same status category
       if (metaA.daysLeft !== null && metaB.daysLeft !== null) {
         return metaA.daysLeft - metaB.daysLeft;
       }
@@ -163,7 +158,86 @@ export default function RecordDetailsPage({
     setExpDateTo("");
   };
 
-  // Render Expiration Date Cell with Badges and Visual Warnings
+  // --- UPDATED: Handle Excel Export with Meta Info ---
+  const handleExportExcel = () => {
+    if (!processedItems || processedItems.length === 0) return;
+
+    // 1. Create the header meta-information
+    const metaInfo = [
+      ["Record ID", record.id || "N/A"],
+      ["BP Channel Code", record.bp_code || "UNASSIGNED"],
+      ["System Log Date", new Date(record.created_at).toLocaleString()],
+      ["Author Identity", creatorName],
+    ];
+
+    // Conditionally add domain-specific top-level info
+    if (domain === "bo") {
+      metaInfo.push([
+        "Total Valuation",
+        `₱${record.total_cost?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || "0.00"}`,
+      ]);
+      metaInfo.push(["Workflow Route", record.workflow_type || "Standard"]);
+    }
+
+    // Add a blank row to separate meta-info from the table
+    metaInfo.push([]);
+
+    // 2. Prepare Table Data
+    const exportData = processedItems.map((item: any) => {
+      const rowData: Record<string, any> = {
+        "SKU / Code": item.item_code,
+        "Description Label": item.item_description,
+      };
+
+      if (domain === "inventory") {
+        rowData["Current Qty"] = item.qty ?? 0;
+        rowData["Expiration Date"] = item.expiration_date
+          ? new Date(item.expiration_date).toLocaleDateString()
+          : "";
+      } else if (domain === "stt") {
+        rowData["Qty"] = item.qty ?? 0;
+      } else if (domain === "bo") {
+        rowData["Req Qty"] = item.request_qty ?? 0;
+        rowData["Actual Qty"] = item.actual_qty ?? "";
+        rowData["Reason"] = item.reason || "";
+        rowData["Remarks"] = item.remarks || "";
+        rowData["RGS Num"] = item.rgs_number || "";
+        rowData["Expiration Date"] = item.expiration_date
+          ? new Date(item.expiration_date).toLocaleDateString()
+          : "";
+      }
+
+      rowData["UOM"] = item.uom || "PCS";
+      return rowData;
+    });
+
+    // 3. Build the Worksheet
+    // Initialize sheet with the meta info array
+    const worksheet = XLSX.utils.aoa_to_sheet(metaInfo);
+
+    // Append the table data starting on the row after the meta info
+    XLSX.utils.sheet_add_json(worksheet, exportData, {
+      origin: metaInfo.length,
+    });
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Manifest");
+
+    // 4. Auto-size columns slightly for better readability
+    // Ensure the first few columns are wide enough for both the meta headers and the item headers
+    const colWidths = Object.keys(exportData[0] || {}).map((key) => ({
+      wch: Math.max(key.length, 15),
+    }));
+    colWidths[0] = { wch: 20 }; // e.g. "Author Identity", "SKU / Code"
+    colWidths[1] = { wch: 30 }; // e.g. names, "Description Label"
+    worksheet["!cols"] = colWidths;
+
+    // 5. Trigger download
+    const fileName = `${domain}_manifest_${record.id || "export"}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+  // ---------------------------------------------------
+
   const renderExpirationCell = (dateStr: string | null | undefined) => {
     if (!dateStr) {
       return <span className="text-muted-foreground">—</span>;
@@ -343,9 +417,19 @@ export default function RecordDetailsPage({
             </Badge>
           </h2>
 
-          {/* EXPIRATION FILTER CONTROLS BAR */}
+          {/* EXPIRATION FILTER CONTROLS BAR & EXPORT BUTTON */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Expiration Status Dropdown */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportExcel}
+              className="h-9 gap-2 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950"
+              disabled={processedItems.length === 0}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export to Excel
+            </Button>
+
             <Select
               value={expirationFilter}
               onValueChange={(val) => setExpirationFilter(val)}
@@ -376,7 +460,6 @@ export default function RecordDetailsPage({
               </SelectContent>
             </Select>
 
-            {/* Date Range Popover */}
             <Popover>
               <PopoverTrigger asChild>
                 <Button
@@ -425,7 +508,6 @@ export default function RecordDetailsPage({
               </PopoverContent>
             </Popover>
 
-            {/* Clear Filters Button */}
             {isFiltered && (
               <Button
                 variant="ghost"
@@ -451,7 +533,6 @@ export default function RecordDetailsPage({
                   Description Label
                 </TableHead>
 
-                {/* INVENTORY Context Headings */}
                 {domain === "inventory" && (
                   <>
                     <TableHead className="text-right font-semibold">
@@ -463,14 +544,12 @@ export default function RecordDetailsPage({
                   </>
                 )}
 
-                {/* STT Context Headings */}
                 {domain === "stt" && (
                   <TableHead className="text-right font-semibold">
                     Qty
                   </TableHead>
                 )}
 
-                {/* BAD ORDER (BO) Context Headings */}
                 {domain === "bo" && (
                   <>
                     <TableHead className="text-right font-semibold">
@@ -501,7 +580,6 @@ export default function RecordDetailsPage({
                 processedItems.map((item: any) => {
                   const { status } = getExpirationMeta(item.expiration_date);
 
-                  // Row Background Highlighting for Expired / Near Expired
                   let rowHighlightClass =
                     "hover:bg-muted/10 h-14 transition-colors";
                   if (status === "expired") {
@@ -524,7 +602,6 @@ export default function RecordDetailsPage({
                         {item.item_description}
                       </TableCell>
 
-                      {/* INVENTORY Conditional Data Grid Cells */}
                       {domain === "inventory" && (
                         <>
                           <TableCell className="text-right font-mono font-bold text-sm text-foreground">
@@ -536,14 +613,12 @@ export default function RecordDetailsPage({
                         </>
                       )}
 
-                      {/* STT Conditional Data Grid Cells */}
                       {domain === "stt" && (
                         <TableCell className="text-right font-mono font-bold text-sm text-foreground">
                           {item.qty ?? 0}
                         </TableCell>
                       )}
 
-                      {/* BAD ORDER Conditional Data Grid Cells */}
                       {domain === "bo" && (
                         <>
                           <TableCell className="text-right font-mono font-medium text-sm text-muted-foreground">
