@@ -37,8 +37,9 @@ export default function AccountingViewReturnWarehousePage() {
   const [items, setItems] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
 
-  // Tracks the macro-level overall financial valuation
+  // Tracks the macro-level overall financial valuation and credit memo
   const [totalCost, setTotalCost] = useState<number | "">("");
+  const [creditMemoNo, setCreditMemoNo] = useState<string>("");
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -90,6 +91,10 @@ export default function AccountingViewReturnWarehousePage() {
       if (currentTicket && currentTicket.total_cost !== null) {
         setTotalCost(currentTicket.total_cost);
       }
+      // Populate Credit Memo No. if exists
+      if (currentTicket && currentTicket.credit_memo_no !== null) {
+        setCreditMemoNo(currentTicket.credit_memo_no);
+      }
     } catch (err) {
       console.error(
         "Failed loading accounting valuation manifest matrix hooks:",
@@ -129,7 +134,7 @@ export default function AccountingViewReturnWarehousePage() {
       requestId: String(ticket.id),
       customerName: ticket.outlet_name || "Unknown Outlet",
       bpCode: ticket.bp_code || "N/A",
-      status: `Accounting Ledger Balanced - Total Valuation PHP ${Number(totalCost).toFixed(2)}`,
+      status: `Accounting Ledger Balanced - Total Valuation PHP ${Number(totalCost).toFixed(2)} (CM: ${creditMemoNo})`,
       dateTime: new Date().toISOString(),
       remarks: ticket.remarks || "",
       filer: {
@@ -164,15 +169,24 @@ export default function AccountingViewReturnWarehousePage() {
       return;
     }
 
+    // NEW VALIDATION: Make Credit Memo Number strictly required
+    if (!creditMemoNo || creditMemoNo.trim() === "") {
+      toast.error(
+        "Missing Information: Please provide a valid Credit Memo Number.",
+      );
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const timestampIso = new Date().toISOString();
 
-      // 1. Update the overall total cost directly inside the parent ticket entry
+      // 1. Update the overall total cost & credit memo directly inside the parent ticket entry
       const { error: ticketUpdateError } = await supabase()
         .from("tbl_bo_input")
         .update({
           total_cost: totalCost,
+          credit_memo_no: creditMemoNo.trim(), // Save trimmed value
         })
         .eq("id", ticket.id);
 
@@ -229,6 +243,7 @@ export default function AccountingViewReturnWarehousePage() {
             : "System-Generated",
         ],
         ["Total Net Cost (PHP)", totalCost || "Not Assigned"],
+        ["Credit Memo No.", creditMemoNo || "N/A"],
         [],
         ["Item Manifest"],
       ];
@@ -248,8 +263,8 @@ export default function AccountingViewReturnWarehousePage() {
       // 3. Stitch Map to Worksheet
       const ws = XLSX.utils.aoa_to_sheet(headerData);
 
-      // Append items starting at row 10 (A10) to respect headers above
-      XLSX.utils.sheet_add_json(ws, itemsData, { origin: "A10" });
+      // Append items starting at row 11 (A11) to respect headers above
+      XLSX.utils.sheet_add_json(ws, itemsData, { origin: "A11" });
 
       // Auto-size columns slightly for better readability
       const columnWidths = [
@@ -392,35 +407,58 @@ export default function AccountingViewReturnWarehousePage() {
           </div>
 
           {/* Dedicated Accounting Valuation Interface */}
-          <div className="border border-emerald-200 bg-emerald-50/20 p-5 rounded-xl space-y-3 shadow-sm">
+          <div className="border border-emerald-200 bg-emerald-50/20 p-5 rounded-xl space-y-4 shadow-sm">
             <div>
               <h3 className="text-xs font-bold tracking-wide text-emerald-800 uppercase flex items-center gap-1.5">
                 Financial Processing Node
               </h3>
               <p className="text-[11px] text-muted-foreground">
-                Enter the absolute total net cost calculated for this return
-                request summary down below.
+                Enter the absolute total net cost and corresponding credit memo
+                calculated for this return summary down below.
               </p>
             </div>
-            <div className="flex items-center gap-3 max-w-sm">
-              <div className="relative flex-1">
-                <span className="absolute left-3 top-2.5 text-sm font-semibold text-slate-400">
-                  ₱
+
+            <div className="space-y-3">
+              {/* Total Cost Input */}
+              <div className="flex items-center gap-3 max-w-sm">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-2.5 text-sm font-semibold text-slate-400">
+                    ₱
+                  </span>
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    className="pl-7 font-mono font-bold text-sm h-10 bg-white border-emerald-300 focus-visible:ring-emerald-500"
+                    value={totalCost}
+                    disabled={isSubmitting || isTerminated || isAlreadyCosted}
+                    onChange={(e) => handleCostChange(e.target.value)}
+                    min={0}
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <span className="text-xs font-semibold text-slate-500 font-sans w-24">
+                  Total Net Cost <span className="text-red-500">*</span>
                 </span>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  className="pl-7 font-mono font-bold text-sm h-10 bg-white border-emerald-300 focus-visible:ring-emerald-500"
-                  value={totalCost}
-                  disabled={isSubmitting || isTerminated || isAlreadyCosted}
-                  onChange={(e) => handleCostChange(e.target.value)}
-                  min={0}
-                  step="0.01"
-                />
               </div>
-              <span className="text-xs font-semibold text-slate-500 font-sans">
-                PHP Total Net Cost
-              </span>
+
+              {/* Credit Memo No Input */}
+              <div className="flex items-center gap-3 max-w-sm">
+                <div className="relative flex-1">
+                  <Input
+                    type="text"
+                    placeholder="e.g., CM-2026-001"
+                    className="font-mono text-sm h-10 bg-white border-emerald-300 focus-visible:ring-emerald-500"
+                    value={creditMemoNo}
+                    disabled={isSubmitting || isTerminated || isAlreadyCosted}
+                    onChange={(e) => setCreditMemoNo(e.target.value)}
+                    required
+                  />
+                </div>
+                <span className="text-xs font-semibold text-slate-500 font-sans w-24">
+                  Credit Memo No. <span className="text-red-500">*</span>
+                </span>
+              </div>
             </div>
           </div>
 

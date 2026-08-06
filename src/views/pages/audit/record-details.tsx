@@ -35,6 +35,7 @@ import {
   Clock,
   CheckCircle2,
   Download,
+  Receipt, // <-- ADDED ICON
 } from "lucide-react";
 import RequestTimeline from "@/components/custom/timeline";
 
@@ -177,6 +178,8 @@ export default function RecordDetailsPage({
         `₱${record.total_cost?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || "0.00"}`,
       ]);
       metaInfo.push(["Workflow Route", record.workflow_type || "Standard"]);
+      // <-- ADDED CREDIT MEMO EXPORT
+      metaInfo.push(["Credit Memo No.", record.credit_memo_no || "N/A"]);
     }
 
     // Add a blank row to separate meta-info from the table
@@ -224,12 +227,11 @@ export default function RecordDetailsPage({
     XLSX.utils.book_append_sheet(workbook, worksheet, "Manifest");
 
     // 4. Auto-size columns slightly for better readability
-    // Ensure the first few columns are wide enough for both the meta headers and the item headers
     const colWidths = Object.keys(exportData[0] || {}).map((key) => ({
       wch: Math.max(key.length, 15),
     }));
-    colWidths[0] = { wch: 20 }; // e.g. "Author Identity", "SKU / Code"
-    colWidths[1] = { wch: 30 }; // e.g. names, "Description Label"
+    colWidths[0] = { wch: 20 };
+    colWidths[1] = { wch: 30 };
     worksheet["!cols"] = colWidths;
 
     // 5. Trigger download
@@ -337,7 +339,8 @@ export default function RecordDetailsPage({
       </div>
 
       {/* Parent Table Core Details Widgets */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Adjusted to grid-cols-5 to accommodate the 5th BO card comfortably on large screens */}
         <div className="p-4 rounded-xl border bg-card flex items-center gap-4 shadow-sm">
           <div className="p-3 bg-muted rounded-lg text-muted-foreground">
             <CalendarIcon className="h-5 w-5" />
@@ -387,6 +390,7 @@ export default function RecordDetailsPage({
                 </span>
               </div>
             </div>
+
             <div className="p-4 rounded-xl border bg-card flex items-center gap-4 shadow-sm">
               <div className="p-3 bg-muted rounded-lg text-muted-foreground">
                 <HardDrive className="h-5 w-5" />
@@ -397,6 +401,21 @@ export default function RecordDetailsPage({
                 </span>
                 <span className="font-semibold text-sm text-foreground">
                   {record.workflow_type || "Standard"}
+                </span>
+              </div>
+            </div>
+
+            {/* <-- ADDED CREDIT MEMO WIDGET --> */}
+            <div className="p-4 rounded-xl border bg-card flex items-center gap-4 shadow-sm">
+              <div className="p-3 bg-muted rounded-lg text-muted-foreground">
+                <Receipt className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="text-xs font-medium text-muted-foreground block">
+                  Credit Memo No.
+                </span>
+                <span className="font-semibold text-sm text-foreground">
+                  {record.credit_memo_no || "—"}
                 </span>
               </div>
             </div>
