@@ -1,19 +1,17 @@
-// pages/reports/BadOrderReportPage.tsx
+// pages/reports/InventoryReportPage.tsx
 import { useEffect, useState, useMemo } from "react";
 import { toast } from "sonner";
 import {
   Loader2,
-  AlertTriangle,
-  RefreshCw,
-  Trash2,
-  Clock,
-  TrendingUp,
-  PieChart as PieIcon,
   Calendar,
-  BarChart2,
   Users,
   CalendarDays,
   User,
+  ClipboardList,
+  MapPin,
+  PackageCheck,
+  TrendingUp,
+  PieChart as PieIcon,
 } from "lucide-react";
 import { supabase } from "@/config/db";
 
@@ -33,58 +31,52 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-interface BOItem {
-  item_code: string;
-  item_description: string;
-  request_qty: number;
-  actual_qty: number | null;
-  uom: string;
+interface InventoryItem {
+  qty: number | null;
 }
 
-interface BORawRecord {
+interface InventoryRawRecord {
   id: string;
   created_at: string;
   outlet_name: string;
   bp_code: string;
-  workflow_type: "For Disposal" | "Return to Warehouse";
-  status: string;
   user_id?: string;
   tbl_employees?: {
     first_name: string | null;
     last_name: string | null;
   } | null;
-  tbl_bo_input_items: BOItem[];
+  tbl_inventory_items: InventoryItem[];
 }
 
 type FilterPeriod = "all" | "month" | "day";
 
 const MONTH_COLORS = [
   "#3b82f6",
+  "#10b981",
   "#8b5cf6",
   "#f97316",
-  "#10b981",
-  "#ef4444",
+  "#06b6d4",
   "#f59e0b",
   "#ec4899",
-  "#06b6d4",
   "#6366f1",
   "#84cc16",
   "#14b8a6",
   "#eab308",
+  "#ef4444",
 ];
 
-export default function BadOrderReportPage() {
+export default function InventoryReportPage() {
   const [currentCompanyId] = useState(() =>
     localStorage.getItem("active_workspace_company_id"),
   );
   const [isLoading, setIsLoading] = useState(true);
-  const [rawData, setRawData] = useState<BORawRecord[]>([]);
+  const [rawData, setRawData] = useState<InventoryRawRecord[]>([]);
   const [filterPeriod, setFilterPeriod] = useState<FilterPeriod>("all");
   const [selectedIndividualAgent, setSelectedIndividualAgent] =
     useState<string>("");
 
   useEffect(() => {
-    async function fetchBadOrderData() {
+    async function fetchInventoryData() {
       if (!currentCompanyId) {
         setIsLoading(false);
         return;
@@ -92,26 +84,20 @@ export default function BadOrderReportPage() {
       setIsLoading(true);
       try {
         const { data, error } = await supabase()
-          .from("tbl_bo_input")
+          .from("tbl_inventory")
           .select(
             `
             id,
             created_at,
             outlet_name,
             bp_code,
-            workflow_type,
-            status,
             user_id,
             tbl_employees (
               first_name,
               last_name
             ),
-            tbl_bo_input_items (
-              item_code,
-              item_description,
-              request_qty,
-              actual_qty,
-              uom
+            tbl_inventory_items (
+              qty
             )
           `,
           )
@@ -119,14 +105,14 @@ export default function BadOrderReportPage() {
 
         if (error) throw error;
 
-        setRawData((data as unknown as BORawRecord[]) || []);
+        setRawData((data as unknown as InventoryRawRecord[]) || []);
       } catch (err: any) {
-        toast.error(err.message || "Failed loading Bad Order reporting layers");
+        toast.error(err.message || "Failed loading Inventory reporting layers");
       } finally {
         setIsLoading(false);
       }
     }
-    fetchBadOrderData();
+    fetchInventoryData();
   }, [currentCompanyId]);
 
   // --- Filter Logic Layer ---
@@ -155,58 +141,69 @@ export default function BadOrderReportPage() {
 
   // --- KPI Metrics ---
   const totals = useMemo(() => {
-    const totalTickets = filteredData.length;
-    let returnWarehouseTickets = 0;
-    let forDisposalTickets = 0;
-    let pendingActionTickets = 0;
+    const totalInventories = filteredData.length;
+    const uniqueOutlets = new Set<string>();
+    let totalItemsCounted = 0;
 
     filteredData.forEach((rec) => {
-      if (rec.workflow_type === "Return to Warehouse")
-        returnWarehouseTickets += 1;
-      if (rec.workflow_type === "For Disposal") forDisposalTickets += 1;
-      if (
-        rec.status?.toLowerCase() === "pending" ||
-        rec.status?.toLowerCase() === "pending action"
-      )
-        pendingActionTickets += 1;
+      if (rec.bp_code) uniqueOutlets.add(rec.bp_code);
+      else if (rec.outlet_name) uniqueOutlets.add(rec.outlet_name);
+
+      rec.tbl_inventory_items?.forEach((item) => {
+        totalItemsCounted += item.qty || 0;
+      });
     });
 
     return {
-      totalTickets,
-      returnWarehouseTickets,
-      forDisposalTickets,
-      pendingActionTickets,
+      totalInventories,
+      uniqueOutlets: uniqueOutlets.size,
+      totalItemsCounted,
     };
   }, [filteredData]);
 
-  // --- Pie Chart Mapping ---
-  const pieChartData = useMemo(
-    () => [
-      {
-        name: "For Disposal",
-        value: totals.forDisposalTickets,
-        fill: "#f97316",
-      },
-      {
-        name: "Return to Warehouse",
-        value: totals.returnWarehouseTickets,
-        fill: "#3b82f6",
-      },
-    ],
-    [totals],
-  );
+  // STRICT HELPER: Exclusively returns first_name + last_name
+  const getAgentName = (rec: InventoryRawRecord) => {
+    const firstName = rec.tbl_employees?.first_name?.trim() || "";
+    const lastName = rec.tbl_employees?.last_name?.trim() || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    return fullName.length > 0 ? fullName : "Unnamed Employee";
+  };
+
+  // --- Agent Leaderboard Mapping (ALL USERS) ---
+  const agentChartData = useMemo(() => {
+    const agentCounts: Record<string, number> = {};
+    filteredData.forEach((rec) => {
+      const agentName = getAgentName(rec);
+      agentCounts[agentName] = (agentCounts[agentName] || 0) + 1;
+    });
+    return Object.entries(agentCounts)
+      .map(([name, inventories]) => ({ name, inventories }))
+      .sort((a, b) => b.inventories - a.inventories);
+  }, [filteredData]);
+
+  // --- Top Outlets Pie Chart Mapping ---
+  const topOutletsData = useMemo(() => {
+    const outletCounts: Record<string, number> = {};
+    filteredData.forEach((rec) => {
+      const name = rec.outlet_name || rec.bp_code || "Unknown Outlet";
+      outletCounts[name] = (outletCounts[name] || 0) + 1;
+    });
+
+    return Object.entries(outletCounts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5) // Top 5
+      .map((item, index) => ({
+        ...item,
+        fill: MONTH_COLORS[index % MONTH_COLORS.length],
+      }));
+  }, [filteredData]);
 
   // --- Chronological Trend Mapping ---
   const trendChartData = useMemo(() => {
-    const trends: Record<
-      string,
-      {
-        period: string;
-        totalTickets: number;
-        disposal: number;
-        warehouse: number;
-      }
-    > = {};
+    const trends: Record<string, { period: string; totalInventories: number }> =
+      {};
     const sortedData = [...filteredData].sort(
       (a, b) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
@@ -231,41 +228,16 @@ export default function BadOrderReportPage() {
           hour12: true,
         });
 
-      if (!trends[dateKey])
+      if (!trends[dateKey]) {
         trends[dateKey] = {
           period: dateKey,
-          totalTickets: 0,
-          disposal: 0,
-          warehouse: 0,
+          totalInventories: 0,
         };
-      trends[dateKey].totalTickets += 1;
-      if (rec.workflow_type === "For Disposal") trends[dateKey].disposal += 1;
-      if (rec.workflow_type === "Return to Warehouse")
-        trends[dateKey].warehouse += 1;
+      }
+      trends[dateKey].totalInventories += 1;
     });
     return Object.values(trends);
   }, [filteredData, filterPeriod]);
-
-  // STRICT HELPER: Exclusively returns first_name + last_name
-  const getAgentName = (rec: BORawRecord) => {
-    const firstName = rec.tbl_employees?.first_name?.trim() || "";
-    const lastName = rec.tbl_employees?.last_name?.trim() || "";
-    const fullName = `${firstName} ${lastName}`.trim();
-
-    return fullName.length > 0 ? fullName : "Unnamed Employee";
-  };
-
-  // --- Agent Leaderboard Mapping (ALL USERS) ---
-  const agentChartData = useMemo(() => {
-    const agentCounts: Record<string, number> = {};
-    filteredData.forEach((rec) => {
-      const agentName = getAgentName(rec);
-      agentCounts[agentName] = (agentCounts[agentName] || 0) + 1;
-    });
-    return Object.entries(agentCounts)
-      .map(([name, tickets]) => ({ name, tickets }))
-      .sort((a, b) => b.tickets - a.tickets);
-  }, [filteredData]);
 
   // Set the default selected individual agent once data loads
   useEffect(() => {
@@ -293,11 +265,11 @@ export default function BadOrderReportPage() {
     });
 
     return Object.entries(monthlyCounts)
-      .map(([month, tickets]) => {
+      .map(([month, inventories]) => {
         const [monthStr, yearStr] = month.split(" ");
         return {
           month,
-          tickets,
+          inventories,
           timestamp: new Date(`${monthStr} 1, ${yearStr}`).getTime(),
         };
       })
@@ -339,9 +311,9 @@ export default function BadOrderReportPage() {
   if (isLoading) {
     return (
       <div className="h-96 flex flex-col items-center justify-center text-muted-foreground gap-2">
-        <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+        <Loader2 className="h-6 w-6 animate-spin text-emerald-500" />
         <span className="text-xs font-medium">
-          Analyzing reclamation logs...
+          Analyzing inventory records...
         </span>
       </div>
     );
@@ -353,11 +325,11 @@ export default function BadOrderReportPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            Bad Order Reclamation Report
+            Inventory Tracking Report
           </h1>
           <p className="text-xs text-muted-foreground">
-            Monitor inventory defects, dynamic routing distributions, and
-            performance matrices.
+            Monitor inventory submissions, agent productivity, and outlet
+            coverage.
           </p>
         </div>
         <div className="flex items-center gap-2 bg-white border p-1 rounded-lg shadow-sm self-start sm:self-auto">
@@ -385,56 +357,43 @@ export default function BadOrderReportPage() {
       </div>
 
       {/* --- KPI CARDS SECTION --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-card p-4 rounded-xl border flex items-center gap-4 shadow-sm bg-white">
-          <div className="p-3 bg-slate-100 text-slate-700 rounded-lg">
-            <AlertTriangle className="h-5 w-5" />
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
+            <ClipboardList className="h-5 w-5" />
           </div>
           <div>
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Total Tickets
+              Total Inventories Filed
             </div>
             <div className="text-2xl font-black text-slate-900">
-              {totals.totalTickets.toLocaleString()}
+              {totals.totalInventories.toLocaleString()}
+            </div>
+          </div>
+        </div>
+        <div className="bg-card p-4 rounded-xl border flex items-center gap-4 shadow-sm bg-white">
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
+            <MapPin className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              Unique Outlets Visited
+            </div>
+            <div className="text-2xl font-black text-indigo-600">
+              {totals.uniqueOutlets.toLocaleString()}
             </div>
           </div>
         </div>
         <div className="bg-card p-4 rounded-xl border flex items-center gap-4 shadow-sm bg-white">
           <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
-            <RefreshCw className="h-5 w-5" />
+            <PackageCheck className="h-5 w-5" />
           </div>
           <div>
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Warehouse Returns
+              Total Items Counted
             </div>
             <div className="text-2xl font-black text-blue-600">
-              {totals.returnWarehouseTickets.toLocaleString()}
-            </div>
-          </div>
-        </div>
-        <div className="bg-card p-4 rounded-xl border flex items-center gap-4 shadow-sm bg-white">
-          <div className="p-3 bg-orange-50 text-orange-600 rounded-lg">
-            <Trash2 className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              For Disposal
-            </div>
-            <div className="text-2xl font-black text-orange-600">
-              {totals.forDisposalTickets.toLocaleString()}
-            </div>
-          </div>
-        </div>
-        <div className="bg-card p-4 rounded-xl border flex items-center gap-4 shadow-sm bg-white">
-          <div className="p-3 bg-amber-50 text-amber-600 rounded-lg">
-            <Clock className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Pending Action
-            </div>
-            <div className="text-2xl font-black text-amber-500">
-              {totals.pendingActionTickets.toLocaleString()}
+              {totals.totalItemsCounted.toLocaleString()}
             </div>
           </div>
         </div>
@@ -442,30 +401,31 @@ export default function BadOrderReportPage() {
 
       {/* --- VISUALIZATIONS SECTION ROW 1 --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-card p-5 rounded-xl border flex flex-col justify-between space-y-4 bg-white">
+        {/* Top Outlets Pie Chart */}
+        <div className="bg-card p-5 rounded-xl border flex flex-col justify-between space-y-4 bg-white shadow-sm">
           <div>
             <div className="flex items-center gap-2">
               <PieIcon className="h-4 w-4 text-slate-500" />
               <h2 className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                Workflow Proportions (Tickets)
+                Top 5 Most Visited Outlets
               </h2>
             </div>
           </div>
           <div className="h-44 w-full flex items-center justify-center py-2">
-            {totals.totalTickets > 0 ? (
+            {topOutletsData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={pieChartData}
+                    data={topOutletsData}
                     dataKey="value"
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    innerRadius={0}
+                    innerRadius={40}
                     outerRadius={75}
-                    paddingAngle={0}
+                    paddingAngle={2}
                   >
-                    {pieChartData.map((entry, index) => (
+                    {topOutletsData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.fill} />
                     ))}
                   </Pie>
@@ -487,19 +447,20 @@ export default function BadOrderReportPage() {
           </div>
         </div>
 
-        <div className="bg-card p-5 rounded-xl border space-y-4 lg:col-span-2 bg-white flex flex-col justify-between">
+        {/* Global Trend Chart */}
+        <div className="bg-card p-5 rounded-xl border space-y-4 lg:col-span-2 bg-white flex flex-col justify-between shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <BarChart2 className="h-4 w-4 text-slate-500" />
+              <TrendingUp className="h-4 w-4 text-slate-500" />
               <h2 className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                Reports Filed Over Time
+                Inventories Created Over Time
               </h2>
             </div>
           </div>
           <div className="h-52 w-full pt-4">
             {trendChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart
+                <LineChart
                   data={trendChartData}
                   margin={{ top: 5, right: 10, left: -20, bottom: 5 }}
                 >
@@ -524,7 +485,11 @@ export default function BadOrderReportPage() {
                     dx={-4}
                   />
                   <Tooltip
-                    cursor={{ fill: "#f8fafc" }}
+                    cursor={{
+                      stroke: "#e2e8f0",
+                      strokeWidth: 1,
+                      strokeDasharray: "3 3",
+                    }}
                     contentStyle={{
                       background: "#fff",
                       borderRadius: "8px",
@@ -532,19 +497,21 @@ export default function BadOrderReportPage() {
                     }}
                     labelStyle={{ fontSize: "11px", fontWeight: "bold" }}
                   />
-                  <Legend
-                    verticalAlign="top"
-                    height={36}
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: "11px" }}
+                  <Line
+                    type="monotone"
+                    dataKey="totalInventories"
+                    name="Inventories Recorded"
+                    stroke="#10b981"
+                    strokeWidth={3}
+                    dot={{
+                      r: 3,
+                      fill: "#10b981",
+                      strokeWidth: 2,
+                      stroke: "#fff",
+                    }}
+                    activeDot={{ r: 5 }}
                   />
-                  <Bar
-                    dataKey="totalTickets"
-                    name="Total Tickets Filed"
-                    fill="#0f172a"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
+                </LineChart>
               </ResponsiveContainer>
             ) : (
               <div className="h-full flex items-center justify-center text-xs text-muted-foreground italic">
@@ -563,17 +530,17 @@ export default function BadOrderReportPage() {
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-slate-500" />
               <h2 className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                All Sales Agents
+                Agent Leaderboard
               </h2>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1">
-              Total tickets filed by each agent.
+              Total inventories submitted per agent.
             </p>
           </div>
-          <div className="w-full pt-2">
+          <div className="w-full pt-2 flex-1 overflow-y-auto custom-scrollbar">
             {agentChartData.length > 0 ? (
               <div
-                style={{ height: Math.max(200, agentChartData.length * 35) }}
+                style={{ height: Math.max(250, agentChartData.length * 35) }}
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
@@ -606,9 +573,9 @@ export default function BadOrderReportPage() {
                       }}
                     />
                     <Bar
-                      dataKey="tickets"
-                      name="Tickets Filed"
-                      fill="#8b5cf6"
+                      dataKey="inventories"
+                      name="Inventories"
+                      fill="#3b82f6"
                       radius={[0, 4, 4, 0]}
                       barSize={20}
                       label={{
@@ -629,176 +596,97 @@ export default function BadOrderReportPage() {
           </div>
         </div>
 
-        {/* Workflow Action Trends */}
-        <div className="bg-card p-5 rounded-xl border space-y-4 lg:col-span-2 bg-white flex flex-col shadow-sm">
-          <div className="flex items-center justify-between shrink-0">
+        {/* All Agents Monthly Breakdown Stacked (Vertical Layout) */}
+        <div className="bg-card p-5 rounded-xl border flex flex-col lg:col-span-2 bg-white shadow-sm">
+          <div className="flex items-center justify-between shrink-0 mb-4">
             <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-slate-500" />
+              <CalendarDays className="h-4 w-4 text-slate-500" />
               <h2 className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                Workflow Action Trends
+                Monthly Breakdown by Agent
               </h2>
             </div>
+            <div className="text-[10px] text-muted-foreground font-medium uppercase bg-slate-100 px-2 py-1 rounded">
+              All Users
+            </div>
           </div>
-          <div className="flex-1 min-h-[13rem] w-full pt-4">
-            {trendChartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={trendChartData}
-                  margin={{ top: 5, right: 10, left: -20, bottom: 5 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#f1f5f9"
-                  />
-                  <XAxis
-                    dataKey="period"
-                    tickLine={false}
-                    axisLine={false}
-                    stroke="#94a3b8"
-                    fontSize={11}
-                    dy={8}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    stroke="#94a3b8"
-                    fontSize={11}
-                    dx={-4}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#fff",
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                    labelStyle={{ fontSize: "11px", fontWeight: "bold" }}
-                  />
-                  <Legend
-                    verticalAlign="top"
-                    height={36}
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: "11px" }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="disposal"
-                    name="For Disposal"
-                    stroke="#f97316"
-                    strokeWidth={2.5}
-                    dot={{ r: 2 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="warehouse"
-                    name="Return to Warehouse"
-                    stroke="#3b82f6"
-                    strokeWidth={2.5}
-                    dot={{ r: 2 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+
+          <div className="w-full pt-4">
+            {agentMonthlyChartData.data.length > 0 ? (
+              <div
+                style={{
+                  height: Math.max(300, agentMonthlyChartData.data.length * 45),
+                }}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={agentMonthlyChartData.data}
+                    layout="vertical"
+                    margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      horizontal={false}
+                      stroke="#f1f5f9"
+                    />
+                    <XAxis
+                      type="number"
+                      tickLine={false}
+                      axisLine={false}
+                      stroke="#94a3b8"
+                      fontSize={11}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="agentName"
+                      tickLine={false}
+                      axisLine={false}
+                      stroke="#64748b"
+                      fontSize={11}
+                      width={130}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "#f8fafc" }}
+                      contentStyle={{
+                        background: "#fff",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                      labelStyle={{
+                        fontSize: "11px",
+                        fontWeight: "bold",
+                        marginBottom: "8px",
+                        color: "#0f172a",
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="top"
+                      height={36}
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: "11px" }}
+                    />
+                    {agentMonthlyChartData.months.map((month, index) => (
+                      <Bar
+                        key={month}
+                        dataKey={month}
+                        name={month}
+                        stackId="a"
+                        fill={MONTH_COLORS[index % MONTH_COLORS.length]}
+                        barSize={20}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-xs text-muted-foreground italic">
-                No active coordinates inside selected scope.
+              <div className="h-48 flex items-center justify-center text-xs text-muted-foreground italic">
+                No monthly data available for the current scope.
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* --- VISUALIZATIONS SECTION ROW 3 (All Agents Breakdown - NO SCROLL) --- */}
-      <div className="bg-card p-5 rounded-xl border space-y-4 bg-white flex flex-col justify-between shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-slate-500" />
-            <h2 className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-              Agent Ticket Volume per Month
-            </h2>
-          </div>
-          <div className="text-[10px] text-muted-foreground font-medium uppercase bg-slate-100 px-2 py-1 rounded">
-            All Users Included
-          </div>
-        </div>
-
-        {/* Removed fixed height and horizontal scroll, switched layout to vertical */}
-        <div className="w-full pt-4">
-          {agentMonthlyChartData.data.length > 0 ? (
-            <div
-              style={{
-                height: Math.max(300, agentMonthlyChartData.data.length * 40),
-              }}
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={agentMonthlyChartData.data}
-                  layout="vertical"
-                  margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    horizontal={false}
-                    stroke="#f1f5f9"
-                  />
-                  <XAxis
-                    type="number"
-                    tickLine={false}
-                    axisLine={false}
-                    stroke="#94a3b8"
-                    fontSize={11}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="agentName"
-                    tickLine={false}
-                    axisLine={false}
-                    stroke="#64748b"
-                    fontSize={11}
-                    width={130}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "#f8fafc" }}
-                    contentStyle={{
-                      background: "#fff",
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                    labelStyle={{
-                      fontSize: "11px",
-                      fontWeight: "bold",
-                      marginBottom: "8px",
-                      color: "#0f172a",
-                    }}
-                  />
-                  <Legend
-                    verticalAlign="top"
-                    height={36}
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: "11px" }}
-                  />
-
-                  {agentMonthlyChartData.months.map((month, index) => (
-                    <Bar
-                      key={month}
-                      dataKey={month}
-                      name={month}
-                      stackId="a"
-                      fill={MONTH_COLORS[index % MONTH_COLORS.length]}
-                      barSize={20}
-                    />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-48 flex items-center justify-center text-xs text-muted-foreground italic">
-              No monthly data available for the current scope.
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* --- VISUALIZATIONS SECTION ROW 4 (Individual Agent Breakdown) --- */}
+      {/* --- VISUALIZATIONS SECTION ROW 3 (Individual Agent Breakdown) --- */}
       <div className="bg-card p-5 rounded-xl border space-y-4 bg-white flex flex-col justify-between shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-2">
@@ -810,7 +698,7 @@ export default function BadOrderReportPage() {
           <select
             value={selectedIndividualAgent}
             onChange={(e) => setSelectedIndividualAgent(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none"
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2 outline-none"
           >
             {agentChartData.length === 0 && (
               <option value="">No Agents Available</option>
@@ -860,11 +748,11 @@ export default function BadOrderReportPage() {
                   labelStyle={{ fontSize: "11px", fontWeight: "bold" }}
                 />
                 <Bar
-                  dataKey="tickets"
-                  name="Tickets Filed"
-                  fill="#0ea5e9"
+                  dataKey="inventories"
+                  name="Inventories Submitted"
+                  fill="#10b981"
                   radius={[4, 4, 0, 0]}
-                  maxBarSize={50}
+                  maxBarSize={60}
                   label={{
                     position: "top",
                     fill: "#64748b",

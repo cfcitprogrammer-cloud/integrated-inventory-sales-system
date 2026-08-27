@@ -34,6 +34,8 @@ import AuditInspectionViewer from "@/views/pages/audit/inspection-viewer";
 import ValidatedAuditDiscrepancyReport from "@/views/pages/reports/inventory-audit";
 import EmployeeKpiDashboard from "@/views/pages/reports/employee-kpi-dashboard";
 import DBRegistryPage from "@/views/pages/audit/db";
+import InventoryReportPage from "@/views/pages/reports/inventory";
+import OrderSalesReportPage from "@/views/pages/reports/booking";
 
 function PendingActivationPage() {
   return (
@@ -309,6 +311,14 @@ export const protectedRoutes = [
       {
         path: "inventory-audit",
         element: <ValidatedAuditDiscrepancyReport />,
+      },
+      {
+        path: "inventory",
+        element: <InventoryReportPage />,
+      },
+      {
+        path: "sales-booking",
+        element: <OrderSalesReportPage />,
       },
       {
         path: "validate-inventory",

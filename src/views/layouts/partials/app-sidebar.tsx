@@ -278,6 +278,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           url: "/integrated-inventory-sales-system/d/audit/bo",
         },
         {
+          title: "Inventory",
+          url: "/integrated-inventory-sales-system/d/audit/inventory",
+        },
+        {
+          title: "Sales Booking",
+          url: "/integrated-inventory-sales-system/d/audit/sales-booking",
+        },
+        {
           title: "Discrepancy",
           url: "/integrated-inventory-sales-system/d/audit/inventory-audit",
         },
