@@ -43,11 +43,19 @@ export default function AccountingViewDirectDisposalsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
+  // Dynamic Status Computation based on Workflow Matrix
+  const getComputedStatus = () => {
+    if (!workflowState) return "Open";
+    return workflowState.dd_agm_status != null ? "Closed" : "Open";
+  };
+
+  const computedStatus = getComputedStatus();
+
   // 🔒 Disables actions if master ticket status is terminal OR if accounting has already voted
   const isTerminated =
+    computedStatus === "Closed" ||
     ticket?.status === "Approved" ||
     ticket?.status === "Rejected" ||
-    ticket?.status === "Closed" ||
     workflowState?.dd_acc_status === "APPROVED" ||
     workflowState?.dd_acc_status === "REJECTED";
 
@@ -215,7 +223,7 @@ export default function AccountingViewDirectDisposalsPage() {
         ["Request ID", ticket.id],
         ["Customer Outlet Name", ticket.outlet_name],
         ["BP Code", ticket.bp_code],
-        ["Status", ticket.status],
+        ["Status", computedStatus], // Updated to use computed logic
         [
           "Filer",
           ticket.tbl_employees
@@ -369,14 +377,12 @@ export default function AccountingViewDirectDisposalsPage() {
               </span>
               <span
                 className={`text-xs font-bold px-2 py-0.5 rounded inline-block mt-0.5 ${
-                  ticket.status === "Approved"
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : ticket.status === "Rejected" || ticket.status === "Closed"
-                      ? "bg-red-50 text-red-700 border border-red-200"
-                      : "bg-yellow-50 text-yellow-700 border border-yellow-200"
+                  computedStatus === "Open"
+                    ? "bg-amber-100 text-amber-800 border border-amber-200"
+                    : "bg-emerald-100 text-emerald-800 border border-emerald-200"
                 }`}
               >
-                {ticket.status}
+                {computedStatus}
               </span>
             </div>
             <div>
@@ -525,7 +531,7 @@ export default function AccountingViewDirectDisposalsPage() {
         {/* Real-Time Processing Sequence Timeline Sidebar */}
         <div className="w-full">
           <RequestTimeline
-            key={`direct-disposal-timeline-${ticket.id}-${ticket.status}-${refreshNonce}`}
+            key={`direct-disposal-timeline-${ticket.id}-${computedStatus}-${refreshNonce}`}
             badOrderId={ticket.id}
           />
         </div>

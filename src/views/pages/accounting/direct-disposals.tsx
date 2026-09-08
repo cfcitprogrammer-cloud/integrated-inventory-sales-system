@@ -18,15 +18,14 @@ type DirectDisposalType = {
   created_at: string;
   outlet_name: string;
   bp_code: string;
-  status: string;
   tbl_employees?: {
     first_name: string;
     last_name: string;
   } | null;
+  tbl_bo_workflow?: any;
 };
 
 export default function AccountingDirectDisposalPage() {
-  // 💡 FIX: Replaced useParams/useNavigate with useSearchParams to prevent strict Route matching failures
   const [searchParams, setSearchParams] = useSearchParams();
   const pageParam = searchParams.get("page");
 
@@ -46,7 +45,7 @@ export default function AccountingDirectDisposalPage() {
   const [totalRecords, setTotalRecords] = useState<number>(0);
   const itemsPerPage = 10;
 
-  // 💡 FIX: Update URL search params seamlessly without breaking route mounting
+  // Update URL search params seamlessly without breaking route mounting
   const handlePageChange = (newPage: number) => {
     setSearchParams((prev) => {
       prev.set("page", String(newPage));
@@ -54,7 +53,7 @@ export default function AccountingDirectDisposalPage() {
     });
   };
 
-  // 💡 Pure Debounce Loop: Only sync text tokens. No routing interference allowed here!
+  // Pure Debounce Loop: Only sync text tokens.
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedQuery(searchQuery);
@@ -79,7 +78,7 @@ export default function AccountingDirectDisposalPage() {
         // -----------------------------------------
         let badgeQuery = supabase()
           .from("tbl_bo_input")
-          .select("status", { head: false })
+          .select("id, tbl_bo_workflow!inner(dd_agm_status)", { head: false })
           .eq("workflow_type", "For Disposal");
 
         if (cleanQuery !== "") {
@@ -91,13 +90,24 @@ export default function AccountingDirectDisposalPage() {
         const { data: badgeData } = await badgeQuery;
 
         if (badgeData) {
+          const openCount = badgeData.filter((d: any) => {
+            const wf = Array.isArray(d.tbl_bo_workflow)
+              ? d.tbl_bo_workflow[0]
+              : d.tbl_bo_workflow;
+            return wf?.dd_agm_status == null;
+          }).length;
+
+          const closedCount = badgeData.filter((d: any) => {
+            const wf = Array.isArray(d.tbl_bo_workflow)
+              ? d.tbl_bo_workflow[0]
+              : d.tbl_bo_workflow;
+            return wf?.dd_agm_status != null;
+          }).length;
+
           setCounts({
             all: badgeData.length,
-            open: badgeData.filter((d) => d.status?.toLowerCase() === "open")
-              .length,
-            closed: badgeData.filter(
-              (d) => d.status?.toLowerCase() === "closed",
-            ).length,
+            open: openCount,
+            closed: closedCount,
           });
         }
 
@@ -112,18 +122,27 @@ export default function AccountingDirectDisposalPage() {
             created_at,
             outlet_name,
             bp_code,
-            status,
             tbl_employees (
               first_name,
               last_name
+            ),
+            tbl_bo_workflow!inner (
+              dd_agm_status
             )
           `,
             { count: "exact" },
           )
           .eq("workflow_type", "For Disposal");
 
-        if (statusFilter !== "All") {
-          dataQuery = dataQuery.eq("status", statusFilter);
+        // Apply new Workflow-based Status Filters using direct disposal AGM status
+        if (statusFilter === "Open") {
+          dataQuery = dataQuery.is("tbl_bo_workflow.dd_agm_status", null);
+        } else if (statusFilter === "Closed") {
+          dataQuery = dataQuery.not(
+            "tbl_bo_workflow.dd_agm_status",
+            "is",
+            null,
+          );
         }
 
         if (cleanQuery !== "") {
@@ -156,6 +175,13 @@ export default function AccountingDirectDisposalPage() {
   const totalPages = Math.ceil(totalRecords / itemsPerPage) || 1;
   const indexOfFirstItem = (urlPage - 1) * itemsPerPage;
 
+  // Helper to accurately resolve the status from the joined workflow data
+  const getComputedStatus = (workflowData: any) => {
+    if (!workflowData) return "Open";
+    const wf = Array.isArray(workflowData) ? workflowData[0] : workflowData;
+    return wf?.dd_agm_status != null ? "Closed" : "Open";
+  };
+
   return (
     <section className="p-6 space-y-6">
       <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -174,7 +200,6 @@ export default function AccountingDirectDisposalPage() {
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
-              // Explicit Interaction: Reset page ONLY when the human hits a key in the search field
               if (urlPage !== 1) {
                 handlePageChange(1);
               }
@@ -292,51 +317,57 @@ export default function AccountingDirectDisposalPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              directDisposals.map((disposal) => (
-                <TableRow key={disposal.id}>
-                  <TableCell className="font-medium">#{disposal.id}</TableCell>
-                  <TableCell>
-                    {disposal.created_at
-                      ? new Date(disposal.created_at).toLocaleDateString()
-                      : "N/A"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{disposal.outlet_name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {disposal.bp_code}
-                    </div>
-                  </TableCell>
+              directDisposals.map((disposal) => {
+                const currentStatus = getComputedStatus(
+                  disposal.tbl_bo_workflow,
+                );
 
-                  <TableCell>
-                    {disposal.tbl_employees
-                      ? `${disposal.tbl_employees.first_name} ${disposal.tbl_employees.last_name}`
-                      : "Unassigned Employee"}
-                  </TableCell>
+                return (
+                  <TableRow key={disposal.id}>
+                    <TableCell className="font-medium">
+                      #{disposal.id}
+                    </TableCell>
+                    <TableCell>
+                      {disposal.created_at
+                        ? new Date(disposal.created_at).toLocaleDateString()
+                        : "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">{disposal.outlet_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {disposal.bp_code}
+                      </div>
+                    </TableCell>
 
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        disposal.status.toLowerCase() === "open"
-                          ? "bg-green-100 text-green-800"
-                          : disposal.status.toLowerCase() === "closed"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-yellow-100 text-yellow-800"
-                      }`}
-                    >
-                      {disposal.status}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Link
-                      to={`/d/accounting/view/direct-disposals/${disposal.id}`}
-                    >
-                      <Button size={"xs"} variant={"outline"}>
-                        <Eye className="h-3 w-3 mr-1" /> Review
-                      </Button>
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))
+                    <TableCell>
+                      {disposal.tbl_employees
+                        ? `${disposal.tbl_employees.first_name} ${disposal.tbl_employees.last_name}`
+                        : "Unassigned Employee"}
+                    </TableCell>
+
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          currentStatus === "Open"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {currentStatus}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Link
+                        to={`/d/accounting/view/direct-disposals/${disposal.id}`}
+                      >
+                        <Button size={"xs"} variant={"outline"}>
+                          <Eye className="h-3 w-3 mr-1" /> Review
+                        </Button>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

@@ -18,11 +18,11 @@ type DirectDisposalType = {
   created_at: string;
   outlet_name: string;
   bp_code: string;
-  status: string;
   tbl_employees?: {
     first_name: string;
     last_name: string;
   } | null;
+  tbl_bo_workflow?: any; // Added workflow relation type
 };
 
 export default function LogisticsReturnToWHPage() {
@@ -73,7 +73,9 @@ export default function LogisticsReturnToWHPage() {
         // -----------------------------------------
         let badgeQuery = supabase()
           .from("tbl_bo_input")
-          .select("status", { head: false })
+          .select("id, tbl_bo_workflow!inner(rwh_logistic_updated_at)", {
+            head: false,
+          })
           .eq("workflow_type", "Return to Warehouse");
 
         if (cleanQuery !== "") {
@@ -85,13 +87,24 @@ export default function LogisticsReturnToWHPage() {
         const { data: badgeData } = await badgeQuery;
 
         if (badgeData) {
+          const openCount = badgeData.filter((d: any) => {
+            const wf = Array.isArray(d.tbl_bo_workflow)
+              ? d.tbl_bo_workflow[0]
+              : d.tbl_bo_workflow;
+            return wf?.rwh_logistic_updated_at == null;
+          }).length;
+
+          const closedCount = badgeData.filter((d: any) => {
+            const wf = Array.isArray(d.tbl_bo_workflow)
+              ? d.tbl_bo_workflow[0]
+              : d.tbl_bo_workflow;
+            return wf?.rwh_logistic_updated_at != null;
+          }).length;
+
           setCounts({
             all: badgeData.length,
-            open: badgeData.filter((d) => d.status?.toLowerCase() === "open")
-              .length,
-            closed: badgeData.filter(
-              (d) => d.status?.toLowerCase() === "closed",
-            ).length,
+            open: openCount,
+            closed: closedCount,
           });
         }
 
@@ -106,18 +119,31 @@ export default function LogisticsReturnToWHPage() {
             created_at,
             outlet_name,
             bp_code,
-            status,
             tbl_employees (
               first_name,
               last_name
+            ),
+            tbl_bo_workflow!inner (
+              rwh_logistic_updated_at
             )
           `,
             { count: "exact" },
           )
           .eq("workflow_type", "Return to Warehouse");
 
-        if (statusFilter !== "All") {
-          dataQuery = dataQuery.eq("status", statusFilter);
+        // Apply Logistics specific workflow filter:
+        // Null means Logistics hasn't received it yet (Open), Not Null means they processed it (Closed)
+        if (statusFilter === "Open") {
+          dataQuery = dataQuery.is(
+            "tbl_bo_workflow.rwh_logistic_updated_at",
+            null,
+          );
+        } else if (statusFilter === "Closed") {
+          dataQuery = dataQuery.not(
+            "tbl_bo_workflow.rwh_logistic_updated_at",
+            "is",
+            null,
+          );
         }
 
         if (cleanQuery !== "") {
@@ -149,6 +175,13 @@ export default function LogisticsReturnToWHPage() {
 
   const totalPages = Math.ceil(totalRecords / itemsPerPage) || 1;
   const indexOfFirstItem = (urlPage - 1) * itemsPerPage;
+
+  // Helper to accurately resolve the status from the joined workflow data
+  const getComputedStatus = (workflowData: any) => {
+    if (!workflowData) return "Open";
+    const wf = Array.isArray(workflowData) ? workflowData[0] : workflowData;
+    return wf?.rwh_logistic_updated_at != null ? "Closed" : "Open";
+  };
 
   return (
     <section className="p-6 space-y-6">
@@ -286,49 +319,55 @@ export default function LogisticsReturnToWHPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              directDisposals.map((disposal) => (
-                <TableRow key={disposal.id}>
-                  <TableCell className="font-medium">#{disposal.id}</TableCell>
-                  <TableCell>
-                    {disposal.created_at
-                      ? new Date(disposal.created_at).toLocaleDateString()
-                      : "N/A"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{disposal.outlet_name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {disposal.bp_code}
-                    </div>
-                  </TableCell>
+              directDisposals.map((disposal) => {
+                const currentStatus = getComputedStatus(
+                  disposal.tbl_bo_workflow,
+                );
 
-                  <TableCell>
-                    {disposal.tbl_employees
-                      ? `${disposal.tbl_employees.first_name} ${disposal.tbl_employees.last_name}`
-                      : "Unassigned Employee"}
-                  </TableCell>
+                return (
+                  <TableRow key={disposal.id}>
+                    <TableCell className="font-medium">
+                      #{disposal.id}
+                    </TableCell>
+                    <TableCell>
+                      {disposal.created_at
+                        ? new Date(disposal.created_at).toLocaleDateString()
+                        : "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">{disposal.outlet_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {disposal.bp_code}
+                      </div>
+                    </TableCell>
 
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        disposal.status.toLowerCase() === "open"
-                          ? "bg-green-100 text-green-800"
-                          : disposal.status.toLowerCase() === "closed"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-yellow-100 text-yellow-800"
-                      }`}
-                    >
-                      {disposal.status}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Link to={`/d/logistics/view/return-wh/${disposal.id}`}>
-                      <Button size={"xs"} variant={"outline"}>
-                        <Eye className="h-3 w-3 mr-1" /> Review
-                      </Button>
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))
+                    <TableCell>
+                      {disposal.tbl_employees
+                        ? `${disposal.tbl_employees.first_name} ${disposal.tbl_employees.last_name}`
+                        : "Unassigned Employee"}
+                    </TableCell>
+
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          currentStatus === "Open"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {currentStatus}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Link to={`/d/logistics/view/return-wh/${disposal.id}`}>
+                        <Button size={"xs"} variant={"outline"}>
+                          <Eye className="h-3 w-3 mr-1" /> Review
+                        </Button>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

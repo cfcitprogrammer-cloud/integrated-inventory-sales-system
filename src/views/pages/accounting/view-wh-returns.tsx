@@ -49,8 +49,19 @@ export default function AccountingViewReturnWarehousePage() {
   const isAlreadyCosted =
     ticket?.total_cost !== null && ticket?.total_cost !== undefined;
 
+  // Dynamic Status Computation based on Workflow Matrix
+  const getComputedStatus = () => {
+    if (!ticket) return "Open";
+    const wf = Array.isArray(ticket.tbl_bo_workflow)
+      ? ticket.tbl_bo_workflow[0]
+      : ticket.tbl_bo_workflow;
+    return wf?.rwh_agm_status != null ? "Closed" : "Open";
+  };
+
+  const computedStatus = getComputedStatus();
+
   // Master tracking variable to determine if ticket is out of active lifecycle stages
-  const isTerminated = ticket?.status === "Closed";
+  const isTerminated = computedStatus === "Closed";
 
   // Core Financial Data Fetch Engine
   async function fetchDetailedData() {
@@ -61,13 +72,16 @@ export default function AccountingViewReturnWarehousePage() {
         .from("tbl_bo_input")
         .select(
           `
-    *,
-    tbl_employees (
-      first_name,
-      last_name,
-      email
-    )
-  `,
+            *,
+            tbl_employees (
+              first_name,
+              last_name,
+              email
+            ),
+            tbl_bo_workflow (
+              rwh_agm_status
+            )
+          `,
         )
         .eq("id", id)
         .single();
@@ -235,7 +249,7 @@ export default function AccountingViewReturnWarehousePage() {
         ["Request ID", ticket.id],
         ["Customer Outlet Name", ticket.outlet_name],
         ["BP Code", ticket.bp_code],
-        ["Status", ticket.status],
+        ["Status", computedStatus], // Updated to use computed logic
         [
           "Filer",
           ticket.tbl_employees
@@ -384,14 +398,12 @@ export default function AccountingViewReturnWarehousePage() {
               </span>
               <span
                 className={`text-xs font-bold px-2 py-0.5 rounded inline-block mt-0.5 ${
-                  ticket.status === "Open"
-                    ? "bg-green-50 text-green-700 border border-green-200"
-                    : ticket.status === "Closed"
-                      ? "bg-red-50 text-red-700 border border-red-200"
-                      : "bg-yellow-50 text-yellow-700 border border-yellow-200"
+                  computedStatus === "Open"
+                    ? "bg-amber-100 text-amber-800 border border-amber-200"
+                    : "bg-emerald-100 text-emerald-800 border border-emerald-200"
                 }`}
               >
-                {ticket.status}
+                {computedStatus}
               </span>
             </div>
             <div>
@@ -616,7 +628,7 @@ export default function AccountingViewReturnWarehousePage() {
         {/* Real-Time Timeline Sequence Sidebar */}
         <div className="w-full">
           <RequestTimeline
-            key={`accounting-timeline-${ticket.id}-${ticket.status}-${refreshNonce}`}
+            key={`accounting-timeline-${ticket.id}-${computedStatus}-${refreshNonce}`}
             badOrderId={ticket.id}
           />
         </div>

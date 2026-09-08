@@ -105,19 +105,31 @@ export default function LogisticsViewReturnWarehousePage() {
     reason: "",
   });
 
+  // Dynamic Status Computation based on Workflow Matrix
+  const getComputedStatus = () => {
+    if (!ticket) return "Open";
+    const wf = Array.isArray(ticket.tbl_bo_workflow)
+      ? ticket.tbl_bo_workflow[0]
+      : ticket.tbl_bo_workflow;
+    return wf?.rwh_logistic_updated_at != null ? "Closed" : "Open";
+  };
+
+  const computedStatus = getComputedStatus();
+
   // Helper flag to check if counts have already been submitted previously
   // We ignore items that start with "temp_" from this check to allow form usage
   const isAlreadySubmitted =
-    items.length > 0 &&
-    items
-      .filter((item) => !String(item.id).startsWith("temp_"))
-      .every((item) => item.actual_qty !== null);
+    (items.length > 0 &&
+      items
+        .filter((item) => !String(item.id).startsWith("temp_"))
+        .every((item) => item.actual_qty !== null)) ||
+    computedStatus === "Closed";
 
   // Master tracking variable to determine if ticket is out of active lifecycle stages
   const isTerminated =
+    computedStatus === "Closed" ||
     ticket?.status === "Approved" ||
-    ticket?.status === "Rejected" ||
-    ticket?.status === "Closed";
+    ticket?.status === "Rejected";
 
   // Core Data Fetch Engine
   async function fetchDetailedData() {
@@ -127,11 +139,17 @@ export default function LogisticsViewReturnWarehousePage() {
       const ticketRes = await supabase()
         .from("tbl_bo_input")
         .select(
-          `*, tbl_employees (
-            first_name,
-            last_name,
-            email
-          )`,
+          `
+            *,
+            tbl_employees (
+              first_name,
+              last_name,
+              email
+            ),
+            tbl_bo_workflow (
+              rwh_logistic_updated_at
+            )
+          `,
         )
         .eq("id", id)
         .single();
@@ -577,14 +595,12 @@ export default function LogisticsViewReturnWarehousePage() {
               </span>
               <span
                 className={`text-xs font-bold px-2 py-0.5 rounded inline-block mt-0.5 ${
-                  ticket.status === "Open"
-                    ? "bg-green-50 text-green-700 border border-green-200"
-                    : ticket.status === "Closed"
-                      ? "bg-red-50 text-red-700 border border-red-200"
-                      : "bg-yellow-50 text-yellow-700 border border-yellow-200"
+                  computedStatus === "Open"
+                    ? "bg-amber-100 text-amber-800 border border-amber-200"
+                    : "bg-emerald-100 text-emerald-800 border border-emerald-200"
                 }`}
               >
-                {ticket.status}
+                {computedStatus}
               </span>
             </div>
             <div>
@@ -635,7 +651,7 @@ export default function LogisticsViewReturnWarehousePage() {
                   Itemized Verification Manifest Table
                 </h3>
                 <span className="text-[11px] text-muted-foreground mt-0.5 block">
-                  {isAlreadySubmitted || ticket.status === "Closed"
+                  {isAlreadySubmitted
                     ? "Manifest submission finalized. Input values locked."
                     : "Edit line inputs below to modify warehouse floor arrival variables"}
                 </span>
@@ -1006,7 +1022,7 @@ export default function LogisticsViewReturnWarehousePage() {
         {/* Audit Sequence Timeline Sidebar Module */}
         <div className="w-full">
           <RequestTimeline
-            key={`timeline-${ticket.id}-${ticket.status}-${refreshNonce}`}
+            key={`timeline-${ticket.id}-${computedStatus}-${refreshNonce}`}
             badOrderId={ticket.id}
           />
         </div>
